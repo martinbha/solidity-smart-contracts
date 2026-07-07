@@ -24,15 +24,18 @@ contract RockPaperScissors {
     }
 
     struct Game {
+        // Slot 1: player1 (20B) + the four small fields (8B) pack together,
+        // making the struct 5 slots instead of 6 — one less cold SSTORE per game.
         address player1;
-        address player2;
-        uint256 stake; // per player; pot is 2x
-        bytes32 commitment1;
-        bytes32 commitment2;
         Move move1;
         Move move2;
         uint40 revealDeadline; // set when player2 joins; 0 = not started
         bool closed; // settled, timed out, or cancelled
+        // Slots 2-5
+        address player2;
+        uint256 stake; // per player; pot is 2x
+        bytes32 commitment1;
+        bytes32 commitment2;
     }
 
     /// @notice Time both players have to reveal once the game is full.
