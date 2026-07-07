@@ -3,4 +3,11 @@ src = "src"
 out = "out"
 libs = ["lib"]
 
+# File access for the merkle tree tooling (script/merkle/*):
+# read the recipient list, write the generated tree.
+fs_permissions = [
+    { access = "read", path = "./utils/merkle/recipients.json" },
+    { access = "read-write", path = "./deployments/merkle" },
+]
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
