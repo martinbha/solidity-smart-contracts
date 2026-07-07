@@ -202,6 +202,18 @@ contract RockPaperScissorsTest is Test {
         rps.settle(id);
     }
 
+    function test_ClosedGameStaysReadable() public {
+        uint256 id = playOut(RockPaperScissors.Move.Rock, RockPaperScissors.Move.Scissors);
+
+        // History must survive settlement: getGame on a closed game works.
+        RockPaperScissors.Game memory game = rps.getGame(id);
+        assertTrue(game.closed);
+        assertEq(game.player1, alice);
+        assertEq(game.player2, bob);
+        assertEq(uint8(game.move1), uint8(RockPaperScissors.Move.Rock));
+        assertEq(uint8(game.move2), uint8(RockPaperScissors.Move.Scissors));
+    }
+
     // ─── Timeouts ───────────────────────────────────────────────────────────
 
     function test_SoleRevealerClaimsPotAfterTimeout() public {

@@ -85,7 +85,7 @@ contract RockPaperScissors {
     /// @notice Join an open game by matching the stake and committing. The
     ///         reveal window opens now: both commitments are locked.
     function joinGame(uint256 id, bytes32 commitment) external payable {
-        Game storage game = _game(id);
+        Game storage game = _openGame(id);
         if (game.player2 != address(0)) revert GameFull();
         if (game.player1 == msg.sender) revert GameNotOpen();
         if (msg.value != game.stake) revert StakeMismatch();
@@ -99,7 +99,7 @@ contract RockPaperScissors {
     /// @notice Reveal your move. Only meaningful once both players committed;
     ///         revealing must reproduce your commitment exactly.
     function reveal(uint256 id, Move move, bytes32 salt) external {
-        Game storage game = _game(id);
+        Game storage game = _openGame(id);
         if (game.revealDeadline == 0) revert RevealPhaseNotStarted();
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > game.revealDeadline) revert RevealWindowOver();
@@ -122,7 +122,7 @@ contract RockPaperScissors {
     /// @notice Settle a fully revealed game: winner is credited the pot, a
     ///         draw splits it. Callable by anyone — settlement is mechanical.
     function settle(uint256 id) external {
-        Game storage game = _game(id);
+        Game storage game = _openGame(id);
         if (game.move1 == Move.None || game.move2 == Move.None) revert BothMovesNotRevealed();
 
         game.closed = true;
@@ -141,7 +141,7 @@ contract RockPaperScissors {
     ///         if the opponent never did (refusing to reveal = forfeiting).
     ///         If neither revealed, each player just reclaims their own stake.
     function claimTimeout(uint256 id) external {
-        Game storage game = _game(id);
+        Game storage game = _openGame(id);
         if (game.revealDeadline == 0) revert RevealPhaseNotStarted();
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp <= game.revealDeadline) revert RevealWindowNotOver();
@@ -168,7 +168,7 @@ contract RockPaperScissors {
 
     /// @notice Cancel a game nobody joined and reclaim the stake.
     function cancelGame(uint256 id) external {
-        Game storage game = _game(id);
+        Game storage game = _openGame(id);
         if (msg.sender != game.player1) revert NotAPlayer();
         if (game.player2 != address(0)) revert GameFull();
 
@@ -197,8 +197,10 @@ contract RockPaperScissors {
         return keccak256(abi.encode(move, salt, player));
     }
 
+    /// @notice Readable for every game ever played, closed or not — history
+    ///         must not disappear once a game settles.
     function getGame(uint256 id) external view returns (Game memory) {
-        return _game(id);
+        return _games[id];
     }
 
     function gamesCount() external view returns (uint256) {
@@ -207,7 +209,9 @@ contract RockPaperScissors {
 
     // ─── Internals ──────────────────────────────────────────────────────────
 
-    function _game(uint256 id) private view returns (Game storage game) {
+    /// @dev For mutating paths only: closed games reject all interaction.
+    ///      Views read _games directly so history stays accessible.
+    function _openGame(uint256 id) private view returns (Game storage game) {
         game = _games[id];
         if (game.closed) revert GameClosed();
     }
