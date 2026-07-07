@@ -100,6 +100,21 @@ contract AuctionHouseTest is Test {
         assertEq(a.highestBidder, bob);
     }
 
+    function test_English_SettlementNotBlockedByBadReceiver() public {
+        // A winner contract with no onERC721Received must not be able to freeze
+        // settlement (and thus the seller's proceeds) forever.
+        (uint256 id, uint256 tokenId) = _mintAndList(1 ether);
+        NonReceiverBidder winner = new NonReceiverBidder(house);
+        vm.deal(address(winner), 5 ether);
+        winner.bid(id, 2 ether);
+
+        vm.warp(block.timestamp + DURATION);
+        house.settleEnglish(id); // would revert if delivery used safeTransferFrom
+
+        assertEq(nft.ownerOf(tokenId), address(winner));
+        assertEq(house.balances(seller), 2 ether);
+    }
+
     function test_English_LateBidExtendsDeadline() public {
         (uint256 id,) = _mintAndList(1 ether);
         AuctionHouse.Auction memory before = house.getAuction(id);
@@ -248,5 +263,20 @@ contract RevertingBidder {
 
     receive() external payable {
         revert("no refunds accepted");
+    }
+}
+
+/// @dev A bidder contract that can win but does NOT implement onERC721Received,
+///      so a safeTransferFrom to it would revert. Used to prove settlement
+///      delivers via transferFrom and can't be blocked by the winner.
+contract NonReceiverBidder {
+    AuctionHouse private immutable house;
+
+    constructor(AuctionHouse house_) {
+        house = house_;
+    }
+
+    function bid(uint256 id, uint256 amount) external {
+        house.bid{value: amount}(id);
     }
 }

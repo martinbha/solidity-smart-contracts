@@ -139,12 +139,17 @@ contract AuctionHouse is IERC721Receiver, ReentrancyGuard {
         if (a.settled) revert AuctionAlreadySettled();
 
         a.settled = true;
+        // settleEnglish is permissionless and the recipient (winner or seller)
+        // is not the caller, so it must not be blockable. A plain transferFrom
+        // skips onERC721Received: a recipient that can't receive safely only
+        // affects its own future custody, it can't freeze the seller's
+        // proceeds or the NFT in escrow.
         if (a.highestBidder != address(0)) {
             balances[a.seller] += a.highestBid;
-            IERC721(a.nft).safeTransferFrom(address(this), a.highestBidder, a.tokenId);
+            IERC721(a.nft).transferFrom(address(this), a.highestBidder, a.tokenId);
             emit AuctionSettled(id, a.highestBidder, a.highestBid);
         } else {
-            IERC721(a.nft).safeTransferFrom(address(this), a.seller, a.tokenId);
+            IERC721(a.nft).transferFrom(address(this), a.seller, a.tokenId);
             emit AuctionSettled(id, address(0), 0);
         }
     }
