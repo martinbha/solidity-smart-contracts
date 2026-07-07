@@ -161,11 +161,13 @@ contract RockPaperScissors {
             balances[claimer] += game.stake * 2;
             emit TimeoutClaimed(id, claimer, game.stake * 2);
         } else {
-            // Neither revealed: mutual refund.
+            // Neither revealed: mutual refund. One event per credited player,
+            // so indexers see both refunds, not just the caller's.
             game.closed = true;
             balances[game.player1] += game.stake;
             balances[game.player2] += game.stake;
-            emit TimeoutClaimed(id, msg.sender, game.stake);
+            emit TimeoutClaimed(id, game.player1, game.stake);
+            emit TimeoutClaimed(id, game.player2, game.stake);
         }
     }
 
