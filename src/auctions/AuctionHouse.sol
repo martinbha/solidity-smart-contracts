@@ -17,7 +17,8 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 ///         bug). Sellers and outbid bidders call withdraw() to collect.
 contract AuctionHouse is IERC721Receiver, ReentrancyGuard {
     enum Kind {
-        English
+        English,
+        Dutch
     }
 
     struct Auction {
@@ -26,11 +27,15 @@ contract AuctionHouse is IERC721Receiver, ReentrancyGuard {
         address seller;
         address nft;
         uint256 tokenId;
+        uint40 start; // Dutch: decay start; English: unused
         uint40 end;
         // English
         uint256 reservePrice;
         address highestBidder;
         uint256 highestBid;
+        // Dutch
+        uint256 startPrice;
+        uint256 floorPrice;
     }
 
     /// @notice Minimum a new bid must exceed the standing bid by.
@@ -47,7 +52,11 @@ contract AuctionHouse is IERC721Receiver, ReentrancyGuard {
     event EnglishAuctionCreated(
         uint256 indexed id, address indexed seller, address indexed nft, uint256 tokenId, uint256 reservePrice, uint40 end
     );
+    event DutchAuctionCreated(
+        uint256 indexed id, address indexed seller, address indexed nft, uint256 tokenId, uint256 startPrice, uint256 floorPrice, uint40 end
+    );
     event BidPlaced(uint256 indexed id, address indexed bidder, uint256 amount, uint40 newEnd);
+    event DutchBought(uint256 indexed id, address indexed buyer, uint256 price);
     event AuctionSettled(uint256 indexed id, address winner, uint256 amount);
     event AuctionCancelled(uint256 indexed id);
     event Withdrawal(address indexed account, uint256 amount);
@@ -63,6 +72,8 @@ contract AuctionHouse is IERC721Receiver, ReentrancyGuard {
     error WrongAuctionKind();
     error NothingToWithdraw();
     error TransferFailed();
+    error InvalidPriceRange();
+    error InsufficientPayment();
 
     // ─── English auctions ───────────────────────────────────────────────────
 
@@ -148,6 +159,74 @@ contract AuctionHouse is IERC721Receiver, ReentrancyGuard {
         a.settled = true;
         IERC721(a.nft).safeTransferFrom(address(this), a.seller, a.tokenId);
         emit AuctionCancelled(id);
+    }
+
+    // ─── Dutch auctions ─────────────────────────────────────────────────────
+
+    /// @notice Escrow an NFT and open a descending-price auction. The price
+    ///         starts at startPrice and decays linearly to floorPrice over
+    ///         `duration`, where it stays until someone buys.
+    function createDutchAuction(
+        address nft,
+        uint256 tokenId,
+        uint256 startPrice,
+        uint256 floorPrice,
+        uint40 duration
+    ) external returns (uint256 id) {
+        if (duration == 0) revert ZeroDuration();
+        if (startPrice < floorPrice) revert InvalidPriceRange();
+
+        id = _auctions.length;
+        Auction storage a = _auctions.push();
+        a.kind = Kind.Dutch;
+        a.seller = msg.sender;
+        a.nft = nft;
+        a.tokenId = tokenId;
+        a.startPrice = startPrice;
+        a.floorPrice = floorPrice;
+        // forge-lint: disable-next-line(block-timestamp)
+        a.start = uint40(block.timestamp);
+        // forge-lint: disable-next-line(block-timestamp)
+        a.end = uint40(block.timestamp) + duration;
+
+        IERC721(nft).transferFrom(msg.sender, address(this), tokenId);
+        emit DutchAuctionCreated(id, msg.sender, nft, tokenId, startPrice, floorPrice, a.end);
+    }
+
+    /// @notice The price a buyer would pay right now: a straight-line decay
+    ///         from startPrice at `start` to floorPrice at `end`, clamped at
+    ///         floorPrice thereafter.
+    function currentPrice(uint256 id) public view returns (uint256) {
+        Auction storage a = _auctions[id];
+        if (a.kind != Kind.Dutch) revert WrongAuctionKind();
+
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp >= a.end) return a.floorPrice;
+        uint256 elapsed = block.timestamp - a.start;
+        uint256 span = a.end - a.start;
+        uint256 drop = ((a.startPrice - a.floorPrice) * elapsed) / span;
+        return a.startPrice - drop;
+    }
+
+    /// @notice Buy the NFT at (or above) the current price; the first taker
+    ///         wins. Overpayment is refunded through the pull-payment ledger,
+    ///         and the seller is credited the settled price.
+    function buy(uint256 id) external payable nonReentrant {
+        Auction storage a = _auctions[id];
+        if (a.kind != Kind.Dutch) revert WrongAuctionKind();
+        if (a.settled) revert AuctionAlreadySettled();
+
+        uint256 price = currentPrice(id);
+        if (msg.value < price) revert InsufficientPayment();
+
+        a.settled = true;
+        balances[a.seller] += price;
+        if (msg.value > price) {
+            balances[msg.sender] += msg.value - price; // refund excess, pull-style
+        }
+
+        IERC721(a.nft).safeTransferFrom(address(this), msg.sender, a.tokenId);
+        emit DutchBought(id, msg.sender, price);
     }
 
     // ─── Payments ───────────────────────────────────────────────────────────
