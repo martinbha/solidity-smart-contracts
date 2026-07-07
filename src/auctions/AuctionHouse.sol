@@ -109,7 +109,9 @@ contract AuctionHouse is IERC721Receiver, ReentrancyGuard {
         if (block.timestamp >= a.end) revert AuctionEnded();
 
         if (a.highestBidder == address(0)) {
-            if (msg.value < a.reservePrice) revert BidBelowReserve();
+            // Reject a zero bid even in a no-reserve auction: "no reserve"
+            // means any positive bid wins, not that the NFT is free.
+            if (msg.value == 0 || msg.value < a.reservePrice) revert BidBelowReserve();
         } else {
             if (msg.value < a.highestBid + MIN_INCREMENT) revert BidTooLow();
         }

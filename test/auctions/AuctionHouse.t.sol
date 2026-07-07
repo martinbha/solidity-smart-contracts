@@ -115,6 +115,19 @@ contract AuctionHouseTest is Test {
         assertEq(house.balances(seller), 2 ether);
     }
 
+    function test_English_RevertWhen_ZeroBidOnNoReserveAuction() public {
+        (uint256 id,) = _mintAndList(0); // no reserve
+        vm.expectRevert(AuctionHouse.BidBelowReserve.selector);
+        vm.prank(alice);
+        house.bid{value: 0}(id);
+
+        // A positive bid still wins a no-reserve auction.
+        vm.prank(alice);
+        house.bid{value: 1 wei}(id);
+        AuctionHouse.Auction memory a = house.getAuction(id);
+        assertEq(a.highestBidder, alice);
+    }
+
     function test_English_LateBidExtendsDeadline() public {
         (uint256 id,) = _mintAndList(1 ether);
         AuctionHouse.Auction memory before = house.getAuction(id);

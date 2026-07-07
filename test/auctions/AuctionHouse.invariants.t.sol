@@ -59,6 +59,7 @@ contract AuctionHandler is Test {
         if (a.settled || block.timestamp >= a.end) return;
 
         uint256 floor = a.highestBidder == address(0) ? a.reservePrice : a.highestBid + house.MIN_INCREMENT();
+        if (floor == 0) floor = 1; // a zero first bid is rejected; keep bids valid
         amount = bound(amount, floor, floor + 10 ether);
         address bidder = _actor(seed);
         if (bidder.balance < amount) return;
