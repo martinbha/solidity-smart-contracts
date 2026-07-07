@@ -179,7 +179,7 @@ contract RockPaperScissorsTest is Test {
         uint256 id =
             rps.createGame{value: STAKE}(commitHash(RockPaperScissors.Move.Rock, ALICE_SALT, alice));
 
-        vm.expectRevert(RockPaperScissors.GameNotOpen.selector);
+        vm.expectRevert(RockPaperScissors.CannotPlaySelf.selector);
         vm.prank(alice);
         rps.joinGame{value: STAKE}(id, commitHash(RockPaperScissors.Move.Paper, ALICE_SALT, alice));
     }

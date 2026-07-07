@@ -57,7 +57,7 @@ contract RockPaperScissors {
     error InvalidMove();
     error StakeMismatch();
     error NotAPlayer();
-    error GameNotOpen();
+    error CannotPlaySelf();
     error GameFull();
     error GameClosed();
     error RevealPhaseNotStarted();
@@ -90,7 +90,7 @@ contract RockPaperScissors {
     function joinGame(uint256 id, bytes32 commitment) external payable {
         Game storage game = _openGame(id);
         if (game.player2 != address(0)) revert GameFull();
-        if (game.player1 == msg.sender) revert GameNotOpen();
+        if (game.player1 == msg.sender) revert CannotPlaySelf();
         if (msg.value != game.stake) revert StakeMismatch();
 
         game.player2 = msg.sender;
