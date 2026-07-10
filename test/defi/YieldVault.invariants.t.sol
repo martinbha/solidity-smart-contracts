@@ -75,6 +75,10 @@ contract VaultHandler is Test {
         vault.harvest();
     }
 
+    function warp(uint256 secs) external {
+        vm.warp(block.timestamp + bound(secs, 1 hours, 3 days));
+    }
+
     function setYieldRate(uint256 bps) external {
         vm.prank(owner);
         vault.setYieldRate(bound(bps, 0, vault.MAX_YIELD_RATE_BPS()));

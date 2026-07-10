@@ -33,7 +33,7 @@ contract YieldVaultTest is Test {
         asset.approve(address(source), SOURCE_RESERVE);
         source.fund(SOURCE_RESERVE);
 
-        vault.setYieldRate(1_000); // 10% per harvest
+        vault.setYieldRate(1_000); // 10% per day
 
         _dealAndApprove(alice, 10_000 ether);
         _dealAndApprove(bob, 10_000 ether);
@@ -44,6 +44,12 @@ contract YieldVaultTest is Test {
         asset.mint(who, amount);
         vm.prank(who);
         asset.approve(address(vault), type(uint256).max);
+    }
+
+    /// @dev Advance one day and harvest, accruing exactly one day of yield.
+    function _harvestAfterOneDay() internal returns (uint256) {
+        vm.warp(block.timestamp + 1 days);
+        return vault.harvest();
     }
 
     // ---------------------------------------------------------------- previews
@@ -71,7 +77,7 @@ contract YieldVaultTest is Test {
     function test_WithdrawBurnsPreviewedShares() public {
         vm.prank(alice);
         vault.deposit(1_000 ether, alice);
-        vault.harvest(); // make the exchange rate non-trivial
+        _harvestAfterOneDay(); // make the exchange rate non-trivial
 
         uint256 assetsOut = 400 ether;
         uint256 promised = vault.previewWithdraw(assetsOut);
@@ -85,7 +91,7 @@ contract YieldVaultTest is Test {
     function test_RedeemPaysPreviewedAssets() public {
         vm.prank(alice);
         vault.deposit(1_000 ether, alice);
-        vault.harvest();
+        _harvestAfterOneDay();
 
         uint256 shares = vault.balanceOf(alice) / 3;
         uint256 promised = vault.previewRedeem(shares);
@@ -103,23 +109,39 @@ contract YieldVaultTest is Test {
         vault.deposit(1_000 ether, alice);
 
         uint256 priceBefore = vault.convertToAssets(1e18);
-        uint256 received = vault.harvest();
+        uint256 received = _harvestAfterOneDay();
         uint256 priceAfter = vault.convertToAssets(1e18);
 
-        assertEq(received, 100 ether); // 10% of 1000
+        assertEq(received, 100 ether); // 10% of 1000 over one day
         assertGt(priceAfter, priceBefore);
+    }
+
+    /// @notice Regression: yield accrues per elapsed time, not per call, so
+    ///         hammering harvest() cannot drain the source's reserve faster.
+    function test_HarvestSpamAccruesNoExtraYield() public {
+        vm.prank(alice);
+        vault.deposit(1_000 ether, alice);
+
+        uint256 reserveBefore = asset.balanceOf(address(source));
+        uint256 received = _harvestAfterOneDay();
+        for (uint256 i = 0; i < 10; i++) {
+            received += vault.harvest(); // same timestamp: zero elapsed
+        }
+
+        assertEq(received, 100 ether); // still just one day of yield
+        assertEq(reserveBefore - asset.balanceOf(address(source)), 100 ether);
     }
 
     function test_EarlyDepositorEarnsMoreThanLate() public {
         vm.prank(alice);
         vault.deposit(1_000 ether, alice);
 
-        vault.harvest(); // only alice is in for this accrual
+        _harvestAfterOneDay(); // only alice is in for this accrual
 
         vm.prank(bob);
         vault.deposit(1_000 ether, bob);
 
-        vault.harvest(); // both share this one
+        _harvestAfterOneDay(); // both share this one
 
         uint256 aliceAssets = vault.previewRedeem(vault.balanceOf(alice));
         uint256 bobAssets = vault.previewRedeem(vault.balanceOf(bob));
@@ -142,6 +164,7 @@ contract YieldVaultTest is Test {
         v.deposit(100 ether, alice);
         vm.stopPrank();
 
+        vm.warp(block.timestamp + 1 days);
         uint256 received = v.harvest();
         assertEq(received, 0);
         assertEq(v.totalAssets(), 100 ether);
@@ -207,7 +230,7 @@ contract YieldVaultTest is Test {
 
         vm.prank(alice);
         vault.deposit(bound(seedAssets, 1, 10_000 ether), alice);
-        vault.harvest();
+        _harvestAfterOneDay();
 
         vm.startPrank(bob);
         uint256 shares = vault.deposit(depositAmount, bob);
@@ -223,7 +246,7 @@ contract YieldVaultTest is Test {
 
         vm.prank(alice);
         vault.deposit(3_333 ether, alice);
-        vault.harvest();
+        _harvestAfterOneDay();
 
         vm.startPrank(bob);
         uint256 paid = vault.mint(shares, bob);
@@ -278,6 +301,15 @@ contract YieldVaultTest is Test {
         s.setVault(address(vault));
         vm.expectRevert(MockYieldSource.VaultAlreadySet.selector);
         s.setVault(address(this));
+    }
+
+    /// @notice A stranger must not be able to grab the set-once vault slot
+    ///         before the deployer wires it (front-run protection).
+    function test_YieldSourceBindingIsOwnerOnly() public {
+        MockYieldSource s = new MockYieldSource(IERC20(address(asset)));
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        s.setVault(attacker);
     }
 
     function test_YieldSourceRejectsStrangers() public {
