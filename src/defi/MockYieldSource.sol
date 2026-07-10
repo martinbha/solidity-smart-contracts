@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @title MockYieldSource
@@ -49,8 +50,7 @@ contract MockYieldSource is Ownable {
     /// @return paid The amount actually transferred.
     function payYield(uint256 amount) external returns (uint256 paid) {
         if (msg.sender != vault) revert NotVault();
-        uint256 reserve = asset.balanceOf(address(this));
-        paid = amount > reserve ? reserve : amount;
+        paid = Math.min(amount, asset.balanceOf(address(this)));
         if (paid > 0) asset.safeTransfer(vault, paid);
         emit YieldPaid(amount, paid);
     }
