@@ -9,10 +9,10 @@ import {YieldVault} from "../../src/defi/YieldVault.sol";
 
 /// @notice Deploys the underlying asset, the mock yield source, and the vault;
 ///         wires them together, funds the source's yield reserve, and sets a
-///         10% per-harvest rate so the utils script has yield to demonstrate.
+///         10% daily rate so the utils script has yield to demonstrate.
 contract DeployYieldVault is Script {
     uint256 public constant YIELD_RESERVE = 1_000_000 ether;
-    uint256 public constant YIELD_RATE_BPS = 1_000; // 10% per harvest
+    uint256 public constant YIELD_RATE_BPS = 1_000; // 10% per day
 
     function run() external {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");

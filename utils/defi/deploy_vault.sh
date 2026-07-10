@@ -3,11 +3,11 @@
 # deploy_vault.sh — deploy the ERC-4626 yield vault and walk the full
 # deposit → harvest → withdraw lifecycle with two depositors:
 #
-#   alice (Anvil #1) deposits 1000 VAST      → in for both harvests
-#   harvest #1 (10% on 1000 = 100 yield)     → only alice's share price rises
-#   bob   (Anvil #2) deposits 1000 VAST      → in for the second harvest only
-#   harvest #2 (10% on ~2100 = ~210 yield)   → split pro-rata
-#   both redeem everything                    → principal + proportional yield
+#   alice (Anvil #1) deposits 1000 VAST        → in for both harvests
+#   +1 day, harvest #1 (10%/day on 1000 = 100) → only alice's share price rises
+#   bob   (Anvil #2) deposits 1000 VAST        → in for the second harvest only
+#   +1 day, harvest #2 (10%/day on ~2100)      → split pro-rata
+#   both redeem everything                      → principal + proportional yield
 #
 # Verifies both got at least principal back and alice (earlier, longer
 # exposure) earned strictly more than bob.
@@ -70,6 +70,11 @@ fund_and_approve() {
         --rpc-url "$RPC_URL" --private-key "$key" > /dev/null
 }
 
+one_day() {
+    cast rpc evm_increaseTime 86400 --rpc-url "$RPC_URL" > /dev/null
+    cast rpc evm_mine --rpc-url "$RPC_URL" > /dev/null
+}
+
 echo ""
 echo "==> Running deposit / harvest / withdraw lifecycle"
 fund_and_approve "$ALICE" "$ALICE_KEY"
@@ -77,16 +82,18 @@ cast send "$VAULT" "deposit(uint256,address)" "$DEPOSIT" "$ALICE" \
     --rpc-url "$RPC_URL" --private-key "$ALICE_KEY" > /dev/null
 echo "    alice deposited 1000 VAST"
 
+one_day
 cast send "$VAULT" "harvest()" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
-echo "    harvest #1 (alice alone in the vault)"
+echo "    +1 day, harvest #1 (alice alone in the vault)"
 
 fund_and_approve "$BOB" "$BOB_KEY"
 cast send "$VAULT" "deposit(uint256,address)" "$DEPOSIT" "$BOB" \
     --rpc-url "$RPC_URL" --private-key "$BOB_KEY" > /dev/null
 echo "    bob deposited 1000 VAST"
 
+one_day
 cast send "$VAULT" "harvest()" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
-echo "    harvest #2 (both in the vault)"
+echo "    +1 day, harvest #2 (both in the vault)"
 
 redeem_all() {
     local who="$1" key="$2"
