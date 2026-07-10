@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import {VaultAsset} from "../../src/defi/VaultAsset.sol";
@@ -225,11 +224,11 @@ contract YieldVaultTest is Test {
     ///         was put in: rounding always favors the vault.
     function testFuzz_RoundTripNeverProfits(uint256 seedAssets, uint256 depositAmount) public {
         // Random pre-existing state so the exchange rate isn't always 1:1.
-        seedAssets = bound(seedAssets, 1, 1_000_000 ether);
+        seedAssets = bound(seedAssets, 1, 10_000 ether);
         depositAmount = bound(depositAmount, 1, 10_000 ether);
 
         vm.prank(alice);
-        vault.deposit(bound(seedAssets, 1, 10_000 ether), alice);
+        vault.deposit(seedAssets, alice);
         _harvestAfterOneDay();
 
         vm.startPrank(bob);
