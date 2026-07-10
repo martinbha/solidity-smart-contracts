@@ -65,13 +65,14 @@ contract YieldVault is ERC4626, Ownable {
         yieldRateBps = bps;
     }
 
-    /// @dev Virtual offset of 3: conversions behave as if 1000 virtual shares
-    ///      back 1 virtual asset. An attacker donating D assets to steal from a
-    ///      victim depositing d loses ~D / 10^3 to the virtual shares while
-    ///      capturing at most the victim's rounding loss — for any realistic D
-    ///      the attack destroys ~1000x more attacker value than it extracts,
-    ///      which is why OZ calls the offset a *deterrent*, not just a bound.
+    /// @dev Virtual offset of 6: conversions behave as if 10^6 virtual shares
+    ///      back 1 virtual asset. Two effects, both proportional to 10^offset:
+    ///      the victim's worst-case rounding loss is one share, worth at most
+    ///      donation / (2 * 10^6); and roughly half the attacker's donation is
+    ///      captured by the virtual shares nobody can redeem, so the attack
+    ///      destroys ~10^6 times more attacker value than it can extract. Share
+    ///      decimals become asset decimals + 6 (24 here) — cosmetic only.
     function _decimalsOffset() internal pure override returns (uint8) {
-        return 3;
+        return 6;
     }
 }
