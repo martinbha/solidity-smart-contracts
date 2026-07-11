@@ -143,6 +143,14 @@ contract MultisigWalletTest is Test {
         wallet.execute(txn, sigs);
     }
 
+    function test_revertsOnZeroAddressTarget() public {
+        MultisigWallet.Transaction memory txn = _txn(address(0), 1 ether, "");
+        bytes[] memory sigs = _signAll(_twoKeys(1, 2), wallet.txHash(txn));
+
+        vm.expectRevert(MultisigWallet.InvalidTarget.selector);
+        wallet.execute(txn, sigs);
+    }
+
     function test_revertsOnNonOwnerSignature() public {
         MultisigWallet.Transaction memory txn = _txn(recipient, 1 ether, "");
         bytes[] memory sigs = _signAll(_twoKeys(1, nonOwnerKey), wallet.txHash(txn));

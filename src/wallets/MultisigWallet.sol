@@ -58,6 +58,7 @@ contract MultisigWallet is EIP712 {
     event ThresholdChanged(uint256 threshold);
 
     error NotSelf();
+    error InvalidTarget();
     error InvalidOwner(address owner);
     error DuplicateOwner(address owner);
     error InvalidThreshold(uint256 threshold, uint256 ownerCount);
@@ -102,6 +103,9 @@ contract MultisigWallet is EIP712 {
         external
         returns (bytes memory)
     {
+        // A zero target is never useful (a call to it succeeds and burns the
+        // value); reject it so a payload with an unset `to` cannot pass.
+        if (txn.to == address(0)) revert InvalidTarget();
         if (txn.nonce != nonce) revert WrongNonce(nonce, txn.nonce);
         uint256 required = threshold;
         if (signatures.length < required) {
