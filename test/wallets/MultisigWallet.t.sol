@@ -196,11 +196,15 @@ contract MultisigWalletTest is Test {
         vm.deal(address(walletB), 10 ether);
 
         // Same owners, same nonce, same payload — signed against wallet A's
-        // domain, so wallet B recovers different (non-owner) signers.
+        // domain, so wallet B recovers a different (non-owner) signer from the
+        // first signature and must reject exactly that address.
         MultisigWallet.Transaction memory txn = _txn(recipient, 1 ether, "");
         bytes[] memory sigs = _signAll(_twoKeys(1, 2), wallet.txHash(txn));
 
-        vm.expectRevert();
+        address wrongSigner = ECDSA.recover(walletB.txHash(txn), sigs[0]);
+        assertFalse(walletB.isOwner(wrongSigner));
+
+        vm.expectRevert(abi.encodeWithSelector(MultisigWallet.InvalidSigner.selector, wrongSigner));
         walletB.execute(txn, sigs);
         assertEq(recipient.balance, 0);
     }
@@ -320,13 +324,13 @@ contract MultisigWalletTest is Test {
 
         // Pick the subset of signing owners from the mask's low 5 bits.
         uint256 count;
-        uint256[] memory subset = new uint256[](n);
         for (uint256 i = 0; i < n; i++) {
-            if (mask & (1 << i) != 0) subset[count++] = keys[i];
+            if (mask & (1 << i) != 0) count++;
         }
         uint256[] memory signing = new uint256[](count);
-        for (uint256 i = 0; i < count; i++) {
-            signing[i] = subset[i];
+        uint256 next;
+        for (uint256 i = 0; i < n; i++) {
+            if (mask & (1 << i) != 0) signing[next++] = keys[i];
         }
 
         MultisigWallet.Transaction memory txn =
