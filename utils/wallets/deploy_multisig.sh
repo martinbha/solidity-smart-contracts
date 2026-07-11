@@ -82,8 +82,9 @@ cast send --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" \
 BALANCE_AFTER=$(cast balance --rpc-url "$RPC_URL" "$RECIPIENT")
 NEW_NONCE=$(cast call --rpc-url "$RPC_URL" "$WALLET" "nonce()(uint256)")
 
-RECEIVED=$((BALANCE_AFTER - BALANCE_BEFORE))
-if [ "$RECEIVED" -ne "$VALUE" ]; then
+# Wei amounts overflow bash's 64-bit arithmetic past ~9.2 ETH, so use bc.
+RECEIVED=$(echo "$BALANCE_AFTER - $BALANCE_BEFORE" | bc)
+if [ "$RECEIVED" != "$VALUE" ]; then
     echo "error: recipient balance moved by $RECEIVED, expected $VALUE" >&2
     exit 1
 fi
