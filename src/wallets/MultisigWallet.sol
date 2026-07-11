@@ -27,6 +27,10 @@ import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 ///        stays valid and may be resubmitted once conditions change. Consuming
 ///        the nonce for a failed call would require swallowing the failure,
 ///        which silently burns approvals; bubbling was chosen instead.
+///      - No separate reentrancy guard is needed: the nonce is bumped before
+///        the external call, so a reentrant `execute` from the inner call
+///        must present `threshold` fresh signatures over the *next* nonce —
+///        which is just a legitimate, fully approved execution.
 ///
 ///      Owner-set changes go through the wallet's own execution path: the
 ///      admin functions are `onlySelf`, so they require the same m-of-n
