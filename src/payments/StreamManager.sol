@@ -28,18 +28,20 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 contract StreamManager {
     using SafeERC20 for IERC20;
 
-    /// @dev Packed into three slots. uint128 covers any realistic token
-    ///      amount; uint40 covers timestamps until year ~36800.
+    /// @dev Packed into four slots: sender+start+cliff+cancelled (31 bytes),
+    ///      recipient+end (25), token (20), totalAmount+withdrawn (32).
+    ///      uint128 covers any realistic token amount; uint40 covers
+    ///      timestamps until year ~36800.
     struct Stream {
         address sender;
-        address recipient;
-        address token;
-        uint128 totalAmount;
         uint40 start;
         uint40 cliff;
-        uint40 end;
-        uint128 withdrawn;
         bool cancelled;
+        address recipient;
+        uint40 end;
+        address token;
+        uint128 totalAmount;
+        uint128 withdrawn;
     }
 
     /// @notice Stream storage by id. Ids start at 1 so 0 is never valid.
@@ -113,14 +115,14 @@ contract StreamManager {
         id = nextStreamId++;
         _streams[id] = Stream({
             sender: msg.sender,
-            recipient: recipient,
-            token: token,
-            totalAmount: amount128,
             start: start40,
             cliff: cliff40,
+            cancelled: false,
+            recipient: recipient,
             end: end40,
-            withdrawn: 0,
-            cancelled: false
+            token: token,
+            totalAmount: amount128,
+            withdrawn: 0
         });
 
         uint256 balanceBefore = IERC20(token).balanceOf(address(this));
