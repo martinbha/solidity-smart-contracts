@@ -100,6 +100,7 @@ contract ChainCanvasTest is Test {
         assertEq(json.readString(".name"), "Chain Canvas #1");
         assertTrue(_startsWith(json.readString(".image"), "data:image/svg+xml;base64,"), "wrong image prefix");
         assertEq(json.readString(".attributes[0].trait_type"), "Palette");
+        assertEq(json.readString(".attributes[4].trait_type"), "Age (blocks)");
         assertEq(json.readUint(".attributes[4].value"), 0); // age at mint block
     }
 
