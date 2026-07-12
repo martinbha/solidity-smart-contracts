@@ -19,18 +19,29 @@ import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156
 ///
 /// @dev The fee is a flat basis-point cut that always rounds UP, so the pool
 ///      never loses a wei to rounding — a borrower always repays at least as
-///      much as the exact-rate fee. Liquidity providers fund the pool by
-///      simply transferring tokens in (or via `fund`); fees accrue to the
-///      pool balance and are shared pro-rata by whoever can withdraw it —
-///      here, kept deliberately simple, the pool is permissionless and this
-///      contract holds the tokens without issuing LP shares. The teaching
-///      focus is the loan mechanics, not the LP accounting.
+///      much as the exact-rate fee.
+///
+///      Liquidity model, deliberately simple: the pool is permissionless and
+///      this contract holds the tokens without issuing LP shares. There is no
+///      withdraw path — `fund` is a ONE-WAY deposit; tokens sent in stay in
+///      forever, and fees accrue to the anonymous pool. A real lender would
+///      mint LP shares and let funders redeem principal + their fee share; the
+///      teaching focus here is the loan mechanics, not the LP accounting, so
+///      do not `fund` this expecting your capital back.
+///
+///      Token assumptions: the pool asset must be a standard, balance-stable
+///      ERC20. A fee-on-transfer token would arrive short of `amount` at the
+///      borrower yet be owed `amount + fee` back, so every loan of such a
+///      token simply reverts — safe for the pool (atomicity protects it) but
+///      unsupported.
 ///
 ///      Reentrancy policy: `flashLoan` is `nonReentrant`. A borrower that
 ///      tries to open a second flash loan from inside its `onFlashLoan`
-///      callback reverts. This is stricter than ERC-3156 requires (nested
-///      loans could be made safe by re-checking balances), but it is the
-///      simplest correct policy and the one this lender documents and tests.
+///      callback reverts. This is stricter than ERC-3156 requires and than
+///      production lenders do — Aave and Balancer permit safe nested loans by
+///      re-checking balances after the callback — but forbidding nesting is
+///      the simplest correct policy to reason about, and the one this lender
+///      documents and tests.
 contract FlashLender is IERC3156FlashLender, ReentrancyGuard {
     using SafeERC20 for IERC20;
 

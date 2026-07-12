@@ -39,10 +39,14 @@ contract GoodBorrower is IERC3156FlashBorrower {
     }
 
     /// @inheritdoc IERC3156FlashBorrower
-    /// @dev Guards match the ERC-3156 security notes: only the trusted lender
-    ///      may invoke the callback, and only a loan this contract itself
-    ///      initiated is honored — otherwise anyone could name this contract
-    ///      as receiver and make it pay fees for their loan.
+    /// @dev Guards match the ERC-3156 security notes, and both are CRITICAL —
+    ///      `onFlashLoan` is a callback anyone can cause to fire. Without the
+    ///      lender check, a fake "lender" could invoke it directly and walk
+    ///      off with whatever this contract approves. Without the initiator
+    ///      check, an attacker could call the real lender with this contract
+    ///      as receiver, making it approve and repay the fee for a loan it
+    ///      never asked for — draining its reserve one fee at a time. A
+    ///      borrower that copies this pattern must keep both guards.
     function onFlashLoan(address initiator, address token_, uint256 amount, uint256 fee, bytes calldata)
         external
         returns (bytes32)

@@ -35,11 +35,23 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 ///      here because the reserve is UNBACKED — no shares stand between the
 ///      attacker and those tokens.
 ///
-///      The fix is to never price off a spot balance: track backing in a
-///      storage accumulator that only moves on deposit/redeem (as a real
-///      ERC-4626 vault does, plus its virtual-shares offset), or read value
-///      from a manipulation-resistant TWAP oracle. This contract does the
-///      wrong thing on purpose.
+///      This is the self-contained version of the lesson. The more famous —
+///      and more dangerous — shape is cross-protocol: protocol B reads this
+///      kind of spot price as an ORACLE (e.g. to value collateral), and an
+///      attacker flash-loans to move the price here, then borrows or
+///      liquidates against the warped valuation over on B, all in one
+///      transaction. Any contract that trusts a spot balance or spot AMM
+///      reserve — its own or another's — is exposed.
+///
+///      The fix is to never price off a spot quantity. Two robust patterns:
+///      (1) track backing in a storage accumulator that only moves on
+///      deposit/redeem — a real ERC-4626 vault does this, and its
+///      virtual-shares offset raises the per-share price floor so a donation
+///      can't round a later depositor to zero (see src/defi/YieldVault.sol
+///      for that offset explained in depth); (2) read value from a
+///      manipulation-resistant oracle — a sufficiently long TWAP, or an
+///      external feed like Chainlink — that a single transaction cannot move.
+///      This contract does the wrong thing on purpose.
 contract NaiveBank {
     using SafeERC20 for IERC20;
 
