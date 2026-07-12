@@ -110,25 +110,19 @@ contract StreamManagerTest is Test {
     }
 
     function test_CreateStreamRevertsOnZeroDuration() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(StreamManager.InvalidTimeRange.selector, start, start, start)
-        );
+        vm.expectRevert(abi.encodeWithSelector(StreamManager.InvalidTimeRange.selector, start, start, start));
         vm.prank(sender);
         manager.createStream(recipient, address(token), TOTAL, start, start, start);
     }
 
     function test_CreateStreamRevertsOnCliffOutsideWindow() public {
         // cliff > end
-        vm.expectRevert(
-            abi.encodeWithSelector(StreamManager.InvalidTimeRange.selector, start, end + 1, end)
-        );
+        vm.expectRevert(abi.encodeWithSelector(StreamManager.InvalidTimeRange.selector, start, end + 1, end));
         vm.prank(sender);
         manager.createStream(recipient, address(token), TOTAL, start, end + 1, end);
 
         // cliff < start
-        vm.expectRevert(
-            abi.encodeWithSelector(StreamManager.InvalidTimeRange.selector, start, start - 1, end)
-        );
+        vm.expectRevert(abi.encodeWithSelector(StreamManager.InvalidTimeRange.selector, start, start - 1, end));
         vm.prank(sender);
         manager.createStream(recipient, address(token), TOTAL, start, start - 1, end);
     }
@@ -145,11 +139,7 @@ contract StreamManagerTest is Test {
         feeToken.mint(sender, TOTAL);
         vm.startPrank(sender);
         feeToken.approve(address(manager), TOTAL);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                StreamManager.FeeOnTransferToken.selector, TOTAL, TOTAL - TOTAL / 100
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(StreamManager.FeeOnTransferToken.selector, TOTAL, TOTAL - TOTAL / 100));
         manager.createStream(recipient, address(feeToken), TOTAL, start, cliff, end);
         vm.stopPrank();
     }
@@ -259,9 +249,7 @@ contract StreamManagerTest is Test {
 
         uint256 available = manager.balanceOf(id);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                StreamManager.ExceedsWithdrawable.selector, id, available + 1, available
-            )
+            abi.encodeWithSelector(StreamManager.ExceedsWithdrawable.selector, id, available + 1, available)
         );
         vm.prank(recipient);
         manager.withdraw(id, available + 1);
@@ -371,9 +359,7 @@ contract StreamManagerTest is Test {
         uint256 idA = _createDefaultStream();
         // Second stream: half the amount, twice the duration, no cliff gap.
         vm.prank(sender);
-        uint256 idB = manager.createStream(
-            recipient, address(token), TOTAL / 2, start, start, start + 60 days
-        );
+        uint256 idB = manager.createStream(recipient, address(token), TOTAL / 2, start, start, start + 60 days);
 
         vm.warp(start + (end - start) / 2); // A: 50% through; B: 25% through
         assertEq(manager.balanceOf(idA), TOTAL / 2);
@@ -414,9 +400,7 @@ contract StreamManagerTest is Test {
 
         token.mint(sender, amount);
         vm.prank(sender);
-        uint256 id = manager.createStream(
-            recipient, address(token), amount, s, s + cliffOffset, s + duration
-        );
+        uint256 id = manager.createStream(recipient, address(token), amount, s, s + cliffOffset, s + duration);
 
         uint256 senderBefore = token.balanceOf(sender);
 
@@ -455,9 +439,7 @@ contract StreamManagerTest is Test {
 
         token.mint(sender, amount);
         vm.prank(sender);
-        uint256 id = manager.createStream(
-            recipient, address(token), amount, s, s + cliffOffset, s + duration
-        );
+        uint256 id = manager.createStream(recipient, address(token), amount, s, s + cliffOffset, s + duration);
 
         uint256 t1 = bound(uint256(t1Seed), block.timestamp, s + duration + 30 days);
         uint256 t2 = bound(uint256(t2Seed), t1, s + duration + 30 days);

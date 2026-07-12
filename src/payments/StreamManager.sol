@@ -72,9 +72,7 @@ contract StreamManager {
         uint40 end
     );
     event Withdrawn(uint256 indexed id, address indexed recipient, uint256 amount);
-    event StreamCancelled(
-        uint256 indexed id, address indexed caller, uint256 recipientPayout, uint256 senderRefund
-    );
+    event StreamCancelled(uint256 indexed id, address indexed caller, uint256 recipientPayout, uint256 senderRefund);
 
     /// @notice Escrow `totalAmount` of `token` and open a stream to
     ///         `recipient` that accrues linearly from `start` to `end`.
