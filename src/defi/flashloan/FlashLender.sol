@@ -50,11 +50,15 @@ contract FlashLender is IERC3156FlashLender, ReentrancyGuard {
     error AmountExceedsMaxLoan(uint256 amount, uint256 max);
     error CallbackFailed(bytes32 returned);
     error RepaymentNotApproved(uint256 needed, uint256 allowance);
+    error FeeTooHigh(uint256 feeBps);
 
     event FlashLoan(address indexed borrower, uint256 amount, uint256 fee);
     event PoolFunded(address indexed from, uint256 amount);
 
     constructor(IERC20 token_, uint256 feeBps_) {
+        // A fee at or above 100% is nonsensical (no borrower could ever repay)
+        // and would only ever brick the lender; reject it at construction.
+        if (feeBps_ >= BPS_DENOMINATOR) revert FeeTooHigh(feeBps_);
         token = token_;
         feeBps = feeBps_;
     }

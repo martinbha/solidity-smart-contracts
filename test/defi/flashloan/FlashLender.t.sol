@@ -59,6 +59,15 @@ contract FlashLenderTest is Test {
         assertEq(lender.maxFlashLoan(address(0xBEEF)), 0);
     }
 
+    function test_ConstructorRejectsFeeAtOrAbove100Percent() public {
+        vm.expectRevert(abi.encodeWithSelector(FlashLender.FeeTooHigh.selector, 10_000));
+        new FlashLender(IERC20(address(token)), 10_000);
+
+        // Just under 100% is allowed (extreme but coherent).
+        FlashLender steep = new FlashLender(IERC20(address(token)), 9_999);
+        assertEq(steep.feeBps(), 9_999);
+    }
+
     // --------------------------------------------------------- revert paths
 
     function test_UnderRepaymentRevertsWholeTx() public {
