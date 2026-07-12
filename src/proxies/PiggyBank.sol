@@ -57,9 +57,10 @@ contract PiggyBank is Initializable, OwnableUpgradeable {
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < unlockTime) revert StillLocked(unlockTime, block.timestamp);
 
+        address recipient = owner();
         uint256 amount = address(this).balance;
-        emit Withdrawn(owner(), amount);
-        (bool ok,) = payable(owner()).call{value: amount}("");
+        emit Withdrawn(recipient, amount);
+        (bool ok,) = payable(recipient).call{value: amount}("");
         if (!ok) revert WithdrawFailed();
     }
 }
