@@ -25,6 +25,15 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 ///      `withdrawn` / `cancelled` are updated before any token transfer, so a
 ///      token with transfer hooks that reenters sees the already-settled
 ///      state and can extract nothing extra.
+///
+///      Token trust assumptions: escrow for a given token is pooled across
+///      all of that token's streams, and the accounting trusts `totalAmount`
+///      once the deposit lands. Fee-on-transfer tokens are rejected at
+///      deposit (see createStream), but a token whose balances change *after*
+///      deposit — rebasing down, admin burns, transfer hooks that skim —
+///      leaves the pool short, and the shortfall silently lands on whichever
+///      stream settles last. Only standard, balance-stable ERC20s are safe
+///      to stream.
 contract StreamManager {
     using SafeERC20 for IERC20;
 
@@ -165,6 +174,14 @@ contract StreamManager {
     ///         out over the stream's life is exactly `totalAmount`.
     /// @dev Cancelling after `end` still works: it simply pays the recipient
     ///      the full remainder and refunds the sender nothing.
+    ///
+    ///      Both payouts are pushed in one transaction (per the atomicity
+    ///      requirement in issue #8). The trade-off: a token that can block
+    ///      transfers to an address (e.g. a blacklist) lets one frozen party
+    ///      make cancel revert, locking the other party's share in escrow
+    ///      too. Production streaming protocols avoid this by making cancel
+    ///      pull-based — refund the sender, leave the recipient's accrued
+    ///      share claimable via withdraw.
     function cancel(uint256 id) external {
         Stream storage stream = _getStream(id);
         if (msg.sender != stream.sender && msg.sender != stream.recipient) {
