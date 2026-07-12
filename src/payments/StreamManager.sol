@@ -137,22 +137,17 @@ contract StreamManager {
     ///         cliff, the accrued-minus-withdrawn amount while streaming, and
     ///         the full remainder after `end`. Zero once cancelled (the
     ///         cancellation already paid out everything accrued).
-    function balanceOf(uint256 id) public view returns (uint256) {
-        Stream storage stream = _streams[id];
-        if (stream.sender == address(0)) revert StreamNotFound(id);
-        // forge-lint: disable-next-line(block-timestamp)
-        if (stream.cancelled || block.timestamp < stream.cliff) return 0;
-        return _accrued(stream) - stream.withdrawn;
+    function balanceOf(uint256 id) external view returns (uint256) {
+        return _withdrawable(_getStream(id));
     }
 
     /// @notice Withdraw `amount` streamed tokens. Recipient only. Pass
     ///         `type(uint256).max` to withdraw everything available.
     function withdraw(uint256 id, uint256 amount) external {
-        Stream storage stream = _streams[id];
-        if (stream.sender == address(0)) revert StreamNotFound(id);
+        Stream storage stream = _getStream(id);
         if (msg.sender != stream.recipient) revert NotRecipient(id, msg.sender);
 
-        uint256 available = balanceOf(id);
+        uint256 available = _withdrawable(stream);
         if (amount == type(uint256).max) amount = available;
         if (amount == 0) revert ZeroAmount();
         if (amount > available) revert ExceedsWithdrawable(id, amount, available);
@@ -171,8 +166,7 @@ contract StreamManager {
     /// @dev Cancelling after `end` still works: it simply pays the recipient
     ///      the full remainder and refunds the sender nothing.
     function cancel(uint256 id) external {
-        Stream storage stream = _streams[id];
-        if (stream.sender == address(0)) revert StreamNotFound(id);
+        Stream storage stream = _getStream(id);
         if (msg.sender != stream.sender && msg.sender != stream.recipient) {
             revert NotStreamParty(id, msg.sender);
         }
@@ -198,9 +192,23 @@ contract StreamManager {
     }
 
     /// @notice Full stream state for off-chain inspection.
-    function getStream(uint256 id) external view returns (Stream memory stream) {
+    function getStream(uint256 id) external view returns (Stream memory) {
+        return _getStream(id);
+    }
+
+    /// @dev Fetch a stream or revert; `sender` doubles as the existence flag
+    ///      since createStream never stores the zero address.
+    function _getStream(uint256 id) private view returns (Stream storage stream) {
         stream = _streams[id];
         if (stream.sender == address(0)) revert StreamNotFound(id);
+    }
+
+    /// @dev Withdrawable right now: zero before the cliff or once cancelled,
+    ///      accrued-minus-withdrawn otherwise.
+    function _withdrawable(Stream storage stream) private view returns (uint256) {
+        // forge-lint: disable-next-line(block-timestamp)
+        if (stream.cancelled || block.timestamp < stream.cliff) return 0;
+        return _accrued(stream) - stream.withdrawn;
     }
 
     /// @dev Total streamed since `start`, clamped to [0, totalAmount].
