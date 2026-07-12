@@ -17,12 +17,22 @@ import {SVGRenderer} from "./SVGRenderer.sol";
 ///
 /// @dev Randomness honesty: the seed is `keccak256(tokenId, minter,
 ///      block.prevrandao)`. The block proposer can bias prevrandao (one bit
-///      per slot by withholding a block) and the minter can dry-run the mint
-///      and wait for a seed they like. That is perfectly fine for which of
-///      five palettes a picture gets, and categorically NOT fine for
-///      anything worth money — lotteries, loot drops with market value,
-///      gambling — which need commit-reveal (see games/RockPaperScissors)
-///      or an oracle like VRF.
+///      per slot by withholding a block), the minter can dry-run the mint
+///      and wait for a seed they like, and a minting *contract* can grind
+///      harder: mint, inspect `traitsOf` in the same transaction, and revert
+///      unless the rare trait landed — paying only gas per attempt, ~50
+///      tries buys near-certain Aurora. That is perfectly fine for which of
+///      five palettes a picture gets (Nouns accepts the same property), and
+///      categorically NOT fine for anything worth money — lotteries, loot
+///      drops with market value, gambling — which need commit-reveal (see
+///      games/RockPaperScissors) or an oracle like VRF.
+///
+///      Immutability trade-off: the renderer is an internal library compiled
+///      into this contract, so the art — bugs included — is frozen at deploy
+///      time. That is the point of "art forever", but it cuts both ways: a
+///      rendering bug can never be patched. Production systems that want
+///      fixable art (Nouns) route tokenURI through a swappable descriptor
+///      contract instead, trading permanence for upgradability.
 ///
 ///      Gas reality: minting stores one seed and one block number; the
 ///      expensive string building in tokenURI runs only in view calls,
@@ -52,6 +62,9 @@ contract ChainCanvas is ERC721, Ownable {
     /// @notice Mint one canvas for exactly MINT_PRICE. Only the seed and the
     ///         mint block are stored, so gas is near-constant regardless of
     ///         how intricate the rendered art is.
+    /// @dev Supply is deliberately unbounded: this collection derives value
+    ///      from the pattern it teaches, not scarcity. A collection whose
+    ///      economics depend on rarity needs a hard cap checked here.
     function mint() external payable returns (uint256 tokenId) {
         if (msg.value != MINT_PRICE) revert WrongMintPrice(msg.value, MINT_PRICE);
 

@@ -204,6 +204,11 @@ library SVGRenderer {
     ///      of radius per two blocks of token age, saturating at r=160 after
     ///      280 blocks. Rendering is a view, so the piece visibly ages
     ///      without anyone paying gas.
+    ///
+    ///      The 280-block horizon assumes mainnet's ~12s cadence (about an
+    ///      hour of visible aging). On fast-block L2s the ring saturates in
+    ///      seconds; retune the divisor and cap — or switch the token
+    ///      contract to timestamp deltas — when deploying elsewhere.
     function _ageRing(uint256 ageBlocks, string memory color) private pure returns (string memory) {
         uint256 r = 20 + (ageBlocks >= 280 ? 140 : ageBlocks / 2);
         return string(
