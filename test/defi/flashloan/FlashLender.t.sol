@@ -17,6 +17,7 @@ contract FlashLenderTest is Test {
     FlashLender internal lender;
 
     bytes32 internal constant CALLBACK_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
+    bytes32 internal constant WRONG_MAGIC = keccak256("not.the.callback.value");
     uint256 internal constant POOL = 1_000_000 ether;
     uint256 internal constant FEE_BPS = 9; // 0.09%, the classic Aave v1 rate
 
@@ -79,7 +80,7 @@ contract FlashLenderTest is Test {
         MischievousBorrower borrower = new MischievousBorrower(lender, MischievousBorrower.Mode.WrongMagic);
         token.mint(address(borrower), 1 ether);
 
-        vm.expectRevert(abi.encodeWithSelector(FlashLender.CallbackFailed.selector, bytes32("nope")));
+        vm.expectRevert(abi.encodeWithSelector(FlashLender.CallbackFailed.selector, WRONG_MAGIC));
         borrower.borrow(100_000 ether);
     }
 
@@ -208,6 +209,7 @@ contract MischievousBorrower is IERC3156FlashBorrower {
     }
 
     bytes32 internal constant CALLBACK_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
+    bytes32 internal constant WRONG_MAGIC = keccak256("not.the.callback.value");
 
     FlashLender internal immutable lender;
     IERC20 internal immutable token;
@@ -233,7 +235,7 @@ contract MischievousBorrower is IERC3156FlashBorrower {
         }
         if (mode == Mode.WrongMagic) {
             IERC20(token_).forceApprove(address(lender), amount + fee);
-            return bytes32("nope");
+            return WRONG_MAGIC;
         }
         // Reenter: try to open a second loan mid-callback.
         lender.flashLoan(this, token_, amount, "");
