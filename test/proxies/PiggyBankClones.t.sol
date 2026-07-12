@@ -189,8 +189,10 @@ contract PiggyBankClonesTest is Test {
 
     // ------------------------------------------------------------------- gas
 
-    /// @dev The cost triangle, printed with -vv. Deploy cost: clone is ~10x
-    ///      cheaper than `new` and ~4x cheaper than a BeaconProxy. Per-call:
+    /// @dev The cost triangle, printed with -vv. Deploy cost is compared
+    ///      two ways: the raw 45-byte clone deploy (~14x cheaper than
+    ///      `new`), and the apples-to-apples initialized clone vs the
+    ///      initialized BeaconProxy (clone still ~2x cheaper). Per-call:
     ///      direct is cheapest, clone pays one delegatecall hop, beacon pays
     ///      the hop plus a beacon staticcall to resolve the implementation.
     function test_GasTriangle_DeployAndPerCall() public {
@@ -205,6 +207,10 @@ contract PiggyBankClonesTest is Test {
         address rawClone = Clones.clone(impl);
         uint256 gasClone = g - gasleft();
 
+        g = gasleft();
+        PiggyBank(payable(rawClone)).initialize(address(this), unlockTime);
+        uint256 gasCloneInit = gasClone + (g - gasleft());
+
         UpgradeableBeacon beacon = new UpgradeableBeacon(impl, address(this));
         g = gasleft();
         BeaconProxy beaconProxy =
@@ -212,16 +218,16 @@ contract PiggyBankClonesTest is Test {
         uint256 gasBeacon = g - gasleft();
 
         console.log("deploy gas:");
-        console.log("  new PiggyBank():        %s", gasNew);
-        console.log("  ERC-1167 clone:         %s", gasClone);
-        console.log("  BeaconProxy (init'd):   %s", gasBeacon);
+        console.log("  new PiggyBank():          %s", gasNew);
+        console.log("  ERC-1167 clone (raw):     %s", gasClone);
+        console.log("  clone + initialize:       %s", gasCloneInit);
+        console.log("  BeaconProxy (init'd):     %s", gasBeacon);
 
-        assertLt(gasClone, gasNew / 5, "clone should be far cheaper than new");
-        assertLt(gasClone, gasBeacon / 5, "clone should be far cheaper than beacon proxy");
+        assertLt(gasClone, gasNew / 10, "raw clone should be an order of magnitude cheaper than new");
+        assertLt(gasCloneInit, gasNew / 4, "even initialized, clone far cheaper than new");
+        assertLt(gasCloneInit, gasBeacon, "initialized clone cheaper than initialized beacon proxy");
 
         // --- per-call overhead (a plain ETH deposit through each) ------
-        PiggyBank(payable(rawClone)).initialize(address(this), unlockTime);
-
         g = gasleft();
         (bool ok1,) = address(direct).call{value: 1 ether}("");
         uint256 callDirect = g - gasleft();
