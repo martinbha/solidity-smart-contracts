@@ -72,10 +72,14 @@ check() {
     else echo "    FAIL  $label: expected $expected, got $actual"; FAILURES=$((FAILURES + 1)); fi
 }
 
+# A real revert prints "revert" in cast's error output; anything else
+# (RPC down, bad args) must fail the check rather than masquerade as one.
 expect_revert() {
     local label="$1"; shift
-    if "$@" > /dev/null 2>&1; then check "$label" "revert" "success"
-    else check "$label" "revert" "revert"; fi
+    local out
+    if out=$("$@" 2>&1); then check "$label" "revert" "success"
+    elif echo "$out" | grep -qi "revert"; then check "$label" "revert" "revert"
+    else check "$label" "revert" "unexpected error"; fi
 }
 
 echo ""
