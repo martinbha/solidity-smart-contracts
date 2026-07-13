@@ -80,9 +80,7 @@ contract GaslessVault is ERC2771Context {
     ///         `_msgSender()` resolves to spends the balance.
     function transfer(address to, uint256 amount) external {
         address account = _msgSender();
-        uint256 available = balances[account];
-        if (amount > available) revert InsufficientBalance(amount, available);
-        balances[account] = available - amount;
+        _debit(account, amount);
         balances[to] += amount;
         emit Transferred(account, to, amount);
     }
@@ -90,9 +88,7 @@ contract GaslessVault is ERC2771Context {
     /// @notice Withdraws `amount` tokens back to the caller.
     function withdraw(uint256 amount) external {
         address account = _msgSender();
-        uint256 available = balances[account];
-        if (amount > available) revert InsufficientBalance(amount, available);
-        balances[account] = available - amount;
+        _debit(account, amount);
         asset.safeTransfer(account, amount);
         emit Withdrawn(account, amount);
     }
@@ -102,5 +98,11 @@ contract GaslessVault is ERC2771Context {
         asset.safeTransferFrom(account, address(this), amount);
         balances[account] += amount;
         emit Deposited(account, amount);
+    }
+
+    function _debit(address account, uint256 amount) internal {
+        uint256 available = balances[account];
+        if (amount > available) revert InsufficientBalance(amount, available);
+        balances[account] = available - amount;
     }
 }
