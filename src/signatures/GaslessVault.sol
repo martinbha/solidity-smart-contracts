@@ -49,6 +49,7 @@ contract GaslessVault is ERC2771Context {
     event Withdrawn(address indexed account, uint256 amount);
 
     error ZeroAmount();
+    error InvalidRecipient();
     error InsufficientBalance(uint256 requested, uint256 available);
 
     constructor(IERC20 asset_, address trustedForwarder_) ERC2771Context(trustedForwarder_) {
@@ -78,7 +79,11 @@ contract GaslessVault is ERC2771Context {
     /// @notice Moves `amount` of the caller's internal balance to `to`.
     ///         This is the kind of authority ERC-2771 spoofing steals: whoever
     ///         `_msgSender()` resolves to spends the balance.
+    /// @dev Rejects a zero recipient: no caller can ever resolve to
+    ///      `address(0)` (the forwarder rejects a zero recovered signer), so
+    ///      a balance moved there would be stranded forever.
     function transfer(address to, uint256 amount) external {
+        if (to == address(0)) revert InvalidRecipient();
         address account = _msgSender();
         _debit(account, amount);
         balances[to] += amount;

@@ -285,6 +285,20 @@ contract GaslessTest is Test {
         assertEq(vault.balances(address(stranger)), 0);
     }
 
+    function test_transferRejectsZeroRecipient() public {
+        vm.startPrank(user);
+        token.approve(address(vault), 100 ether);
+        vault.deposit(100 ether);
+
+        // A balance moved to address(0) could never be withdrawn — no caller
+        // resolves to the zero address — so the vault refuses to strand it.
+        vm.expectRevert(GaslessVault.InvalidRecipient.selector);
+        vault.transfer(address(0), 50 ether);
+        vm.stopPrank();
+
+        assertEq(vault.balances(user), 100 ether);
+    }
+
     function test_trustingAMaliciousForwarderIsCatastrophic() public {
         // A vault misconfigured to trust an attacker-controlled forwarder:
         // the suffix is unauthenticated data, so the attacker impersonates
