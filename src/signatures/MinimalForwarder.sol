@@ -28,6 +28,15 @@ import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 ///      - The forwarder itself is trustless: it can only execute exactly what
 ///        was signed. All the trust sits on the *target's* side, in its
 ///        choice of trusted forwarder (see GaslessVault).
+///      - Two production protections are deliberately omitted to keep the
+///        teaching surface small; OZ's `ERC2771Forwarder` has both. Requests
+///        carry no deadline, so a signed request stays executable until its
+///        nonce is consumed. And the forwarder never asks the target whether
+///        it is trusted (`_isTrustedByTarget` in OZ), so a request aimed at a
+///        non-ERC-2771 target executes with the *forwarder* as the apparent
+///        sender — harmless for this vault (the inner call just fails, see
+///        the untrusted-forwarder test) but wrong-sender semantics for any
+///        target that acts on plain `msg.sender`.
 contract MinimalForwarder is EIP712 {
     using ECDSA for bytes32;
 
