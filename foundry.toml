@@ -3,6 +3,14 @@ src = "src"
 out = "out"
 libs = ["lib"]
 
+# The OZ Governor stack (src/governance) exceeds the 24KB runtime size limit
+# unoptimized. Its deploy runs under this profile (utils/governance/
+# deploy_dao.sh); the default profile stays unoptimized so the gas numbers
+# the other patterns teach with stay as measured.
+[profile.optimized]
+optimizer = true
+optimizer_runs = 200
+
 # File access for the merkle tree tooling (script/merkle/*):
 # read the recipient list, write the generated tree.
 fs_permissions = [
