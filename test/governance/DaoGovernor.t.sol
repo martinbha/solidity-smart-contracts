@@ -303,4 +303,12 @@ contract DaoGovernorTest is Test {
         treasury.release(payable(recipient), 1 ether);
         assertEq(recipient.balance, 1 ether);
     }
+
+    function test_releaseRejectsZeroRecipient() public {
+        // Even a fully passed proposal cannot burn funds to address(0): ETH
+        // sent there by a plain call succeeds and is gone forever.
+        vm.prank(address(timelock));
+        vm.expectRevert(Treasury.InvalidRecipient.selector);
+        treasury.release(payable(address(0)), 1 ether);
+    }
 }
