@@ -28,7 +28,12 @@ import {Nonces} from "@openzeppelin/contracts/utils/Nonces.sol";
 ///      `ERC20Permit` rides along so voters can be onboarded gaslessly (see
 ///      the signatures pattern) and because `ERC20Votes` builds on the same
 ///      EIP-712 domain for signature-based delegation (`delegateBySig`).
-///      The public unrestricted mint keeps local demos frictionless.
+///
+///      The public unrestricted mint keeps local demos frictionless — but
+///      note what it gives away: anyone can mint themselves quorum *before*
+///      a snapshot and pass any proposal. Checkpointing only defends against
+///      power acquired *after* the snapshot; who may create supply, and on
+///      what schedule, is exactly as security-critical as the timelock.
 contract GovToken is ERC20, ERC20Permit, ERC20Votes {
     constructor() ERC20("Governance Token", "GOV") ERC20Permit("Governance Token") {}
 
