@@ -88,6 +88,42 @@ contract Erc1271Test is Test {
         token.approve(address(book), 100 ether);
     }
 
+    /// @dev Approves the book from the multisig the on-chain way: a
+    ///      threshold-signed `execute` calling `token.approve`, so no prank
+    ///      shortcut stands in for a real contract-maker approval.
+    function _prepareMultisigMaker(uint256 amount) internal {
+        token.mint(address(multisig), amount);
+
+        bytes memory approveCall = abi.encodeCall(token.approve, (address(book), amount));
+        bytes32 digest = _executeDigest(address(token), 0, approveCall, multisig.nonce());
+        bytes memory sig = _multisigSig(_twoKeys(1, 2), digest);
+
+        multisig.execute(address(token), 0, approveCall, sig);
+    }
+
+    function _executeDigest(address target, uint256 value, bytes memory data, uint256 nonce)
+        internal
+        view
+        returns (bytes32)
+    {
+        bytes32 structHash = keccak256(abi.encode(multisig.EXECUTE_TYPEHASH(), target, value, keccak256(data), nonce));
+        bytes32 domainSeparator = _multisigDomainSeparator();
+        return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
+    }
+
+    function _multisigDomainSeparator() internal view returns (bytes32) {
+        (, string memory name, string memory version, uint256 chainId, address verifying,,) = multisig.eip712Domain();
+        return keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(bytes(name)),
+                keccak256(bytes(version)),
+                chainId,
+                verifying
+            )
+        );
+    }
+
     // --------------------------------------------------- isValidSignature unit
 
     function test_isValidSignatureReturnsMagicForThresholdBundle() public view {
@@ -158,7 +194,7 @@ contract Erc1271Test is Test {
     // -------------------------------------------------- multisig-signed fills
 
     function test_fillsMultisigSignedOrder() public {
-        _prepareMaker(address(multisig));
+        _prepareMultisigMaker(100 ether);
         OrderBook.Order memory order = _order(address(multisig), 0);
         bytes memory sig = _multisigSig(_twoKeys(1, 2), book.hashOrder(order));
 
@@ -170,7 +206,7 @@ contract Erc1271Test is Test {
     }
 
     function test_rejectsBelowThresholdMultisigOrder() public {
-        _prepareMaker(address(multisig));
+        _prepareMultisigMaker(100 ether);
         OrderBook.Order memory order = _order(address(multisig), 0);
         // Only one owner signs — below the 2-of-3 threshold.
         bytes memory sig = _sign(1, book.hashOrder(order));
@@ -224,6 +260,42 @@ contract Erc1271Test is Test {
         vm.prank(taker);
         vm.expectRevert(OrderBook.BadSignature.selector);
         book.fillOrder{value: 1 ether}(order, sig);
+    }
+
+    // ------------------------------------------------- threshold execution
+
+    function test_executeRunsCallWithThresholdSignatures() public {
+        // A threshold-signed execute lets the multisig act: here, approve the
+        // book, which a pure signer could never do on its own.
+        bytes memory approveCall = abi.encodeCall(token.approve, (address(book), 50 ether));
+        bytes32 digest = _executeDigest(address(token), 0, approveCall, 0);
+        bytes memory sig = _multisigSig(_twoKeys(1, 2), digest);
+
+        multisig.execute(address(token), 0, approveCall, sig);
+
+        assertEq(token.allowance(address(multisig), address(book)), 50 ether);
+        assertEq(multisig.nonce(), 1);
+    }
+
+    function test_executeRevertsBelowThreshold() public {
+        bytes memory approveCall = abi.encodeCall(token.approve, (address(book), 50 ether));
+        bytes32 digest = _executeDigest(address(token), 0, approveCall, 0);
+        bytes memory sig = _sign(1, digest); // one owner only
+
+        vm.expectRevert(SignerMultisig.NotEnoughSignatures.selector);
+        multisig.execute(address(token), 0, approveCall, sig);
+    }
+
+    function test_executeBundleCannotBeReplayed() public {
+        bytes memory approveCall = abi.encodeCall(token.approve, (address(book), 50 ether));
+        bytes32 digest = _executeDigest(address(token), 0, approveCall, 0);
+        bytes memory sig = _multisigSig(_twoKeys(1, 2), digest);
+
+        multisig.execute(address(token), 0, approveCall, sig);
+
+        // Nonce advanced, so the same signed bundle no longer authorizes.
+        vm.expectRevert(SignerMultisig.NotEnoughSignatures.selector);
+        multisig.execute(address(token), 0, approveCall, sig);
     }
 
     // ------------------------------------------------------------------- fuzz
