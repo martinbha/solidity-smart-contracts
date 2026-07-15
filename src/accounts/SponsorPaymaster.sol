@@ -59,11 +59,18 @@ contract SponsorPaymaster is BasePaymaster {
         returns (bytes memory context, uint256 validationData)
     {
         bytes calldata callData = userOp.callData;
+        // A call shorter than a selector (e.g. a deploy-only op with empty
+        // callData) is nothing this paymaster sponsors — reject it cleanly
+        // rather than letting the slice below panic out of bounds.
+        if (callData.length < 4) revert UnsupportedSelector(bytes4(0));
         bytes4 selector = bytes4(callData[:4]);
 
         if (selector == BaseAccount.execute.selector) {
-            // execute(address target, uint256 value, bytes data)
-            (address target,,) = abi.decode(callData[4:], (address, uint256, bytes));
+            // execute(address target, uint256 value, bytes data) — decode only
+            // the leading target word; the value and (dynamic) data payload
+            // are irrelevant to the sponsoring decision and copying them in
+            // during gas-restricted validation is wasted work.
+            address target = abi.decode(callData[4:], (address));
             _requireAllowed(target);
         } else if (selector == BaseAccount.executeBatch.selector) {
             // executeBatch(Call[] calls) — every leg must be allowlisted, so

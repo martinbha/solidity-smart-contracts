@@ -213,6 +213,30 @@ contract SmartAccountTest is Test {
         entryPoint.handleOps(ops, payable(bundler));
     }
 
+    function test_paymasterRejectsShortCallDataWithoutPanic() public {
+        // A deploy-only op (empty callData) sponsored by the paymaster: the
+        // paymaster has no target to check, so it must reject cleanly rather
+        // than panic on the calldata slice.
+        PackedUserOperation memory op = _emptyOp(address(account));
+        op.nonce = entryPoint.getNonce(address(account), 0);
+        op.callData = ""; // shorter than a 4-byte selector
+        op = _withPaymaster(op);
+        op = _sign(ownerKey, op);
+
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = op;
+        vm.prank(bundler);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEntryPoint.FailedOpWithRevert.selector,
+                0,
+                "AA33 reverted",
+                abi.encodeWithSelector(SponsorPaymaster.UnsupportedSelector.selector, bytes4(0))
+            )
+        );
+        entryPoint.handleOps(ops, payable(bundler));
+    }
+
     // -------------------------------------------------------------- batching
 
     function test_executeBatchPerformsMultipleCallsAtomically() public {
