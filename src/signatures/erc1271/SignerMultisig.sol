@@ -96,6 +96,16 @@ contract SignerMultisig is IERC1271, EIP712 {
         return _thresholdSigned(hash, signature) ? MAGIC_VALUE : INVALID;
     }
 
+    /// @notice EIP-712 digest owners must sign to authorize the call
+    ///         `execute(target, value, data)` at `nonce_`.
+    function hashExecute(address target, uint256 value, bytes calldata data, uint256 nonce_)
+        public
+        view
+        returns (bytes32)
+    {
+        return _hashTypedDataV4(keccak256(abi.encode(EXECUTE_TYPEHASH, target, value, keccak256(data), nonce_)));
+    }
+
     /// @notice Executes `target.call{value}(data)` once `threshold` owners have
     ///         signed the call's EIP-712 digest. Lets the multisig act, not
     ///         just witness — e.g. approve a settlement venue before its orders
@@ -109,8 +119,7 @@ contract SignerMultisig is IERC1271, EIP712 {
         external
         returns (bytes memory)
     {
-        bytes32 digest =
-            _hashTypedDataV4(keccak256(abi.encode(EXECUTE_TYPEHASH, target, value, keccak256(data), nonce)));
+        bytes32 digest = hashExecute(target, value, data, nonce);
         if (!_thresholdSigned(digest, signature)) revert NotEnoughSignatures();
 
         uint256 executedNonce = nonce;
