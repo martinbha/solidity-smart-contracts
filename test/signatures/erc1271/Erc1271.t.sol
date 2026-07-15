@@ -17,6 +17,14 @@ contract TestToken is ERC20 {
 /// @dev A contract maker that does NOT implement EIP-1271.
 contract NotASigner {}
 
+/// @dev A 1271 maker that validates any signature but refuses to receive ETH,
+///      so settlement's payment leg fails.
+contract PaymentRejectingSigner {
+    function isValidSignature(bytes32, bytes calldata) external pure returns (bytes4) {
+        return 0x1626ba7e;
+    }
+}
+
 contract Erc1271Test is Test {
     bytes4 internal constant MAGIC_VALUE = 0x1626ba7e;
     bytes4 internal constant INVALID = 0xffffffff;
@@ -237,6 +245,19 @@ contract Erc1271Test is Test {
         vm.prank(taker);
         vm.expectRevert(OrderBook.BadSignature.selector);
         book.fillOrder{value: 1 ether}(order, sig);
+    }
+
+    function test_makerRejectingPaymentRevertsClearly() public {
+        // A 1271 maker that accepts the signature but has no way to receive
+        // ETH: the payment leg fails and the fill reverts naming the maker,
+        // not a bogus "wrong payment" with equal amounts.
+        PaymentRejectingSigner maker = new PaymentRejectingSigner();
+        _prepareMaker(address(maker));
+        OrderBook.Order memory order = _order(address(maker), 0);
+
+        vm.prank(taker);
+        vm.expectRevert(abi.encodeWithSelector(OrderBook.MakerPaymentRejected.selector, address(maker)));
+        book.fillOrder{value: 1 ether}(order, "any-sig-accepted");
     }
 
     // ------------------------------------------------- threshold execution

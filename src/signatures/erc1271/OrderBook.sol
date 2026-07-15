@@ -66,6 +66,7 @@ contract OrderBook is EIP712 {
     error OrderAlreadyFilled(address maker, uint256 nonce);
     error BadSignature();
     error WrongPayment(uint256 expected, uint256 provided);
+    error MakerPaymentRejected(address maker);
 
     constructor() EIP712("OrderBook", "1") {}
 
@@ -96,8 +97,11 @@ contract OrderBook is EIP712 {
         filled[order.maker][order.nonce] = true;
 
         // Settle: ETH to the maker, tokens from the maker to the taker.
+        // A contract maker must be able to receive ETH; if it refuses, the
+        // whole fill reverts (and rolls back) — the payment amount was already
+        // validated equal above, so the failure is the maker's, not the taker's.
         (bool paid,) = order.maker.call{value: msg.value}("");
-        if (!paid) revert WrongPayment(order.price, msg.value);
+        if (!paid) revert MakerPaymentRejected(order.maker);
         IERC20(order.token).safeTransferFrom(order.maker, msg.sender, order.amount);
 
         emit OrderFilled(order.maker, msg.sender, order.token, order.amount, order.price, order.nonce);
