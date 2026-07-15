@@ -33,6 +33,14 @@ import {SmartAccount} from "./SmartAccount.sol";
 ///      An unrecognized selector or any non-allowlisted target reverts, which
 ///      the EntryPoint surfaces as a rejected op — the paymaster never pays
 ///      for something outside the set its operator opted into.
+///
+///      What it deliberately does NOT do, to stay legible: it sponsors *any*
+///      sender that calls an allowlisted target, with no per-sender cap or
+///      rate limit. That is enough to grief the deposit — an attacker points
+///      their own account at the target and replays valid ops until the
+///      deposit drains. A production sponsor adds sender allowlisting, spend
+///      caps, or a `postOp` accounting charge; those bolt onto this same
+///      validate/postOp seam.
 contract SponsorPaymaster is BasePaymaster {
     /// @notice Apps this paymaster will sponsor calls to.
     mapping(address => bool) public allowed;
