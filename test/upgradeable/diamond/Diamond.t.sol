@@ -13,6 +13,7 @@ import {DiamondLoupeFacet} from "../../../src/upgradeable/diamond/facets/Diamond
 import {OwnershipFacet} from "../../../src/upgradeable/diamond/facets/OwnershipFacet.sol";
 import {CounterFacet} from "../../../src/upgradeable/diamond/facets/CounterFacet.sol";
 import {CounterFacetV2} from "../../../src/upgradeable/diamond/facets/CounterFacetV2.sol";
+import {LibCounter} from "../../../src/upgradeable/diamond/libraries/LibCounter.sol";
 
 contract DiamondTest is Test {
     Diamond internal diamond;
@@ -172,6 +173,7 @@ contract DiamondTest is Test {
     function test_Loupe_SupportsInterface() public view {
         assertTrue(IERC165(address(diamond)).supportsInterface(type(IERC165).interfaceId));
         assertTrue(IERC165(address(diamond)).supportsInterface(type(IDiamondLoupe).interfaceId));
+        assertTrue(IERC165(address(diamond)).supportsInterface(type(IDiamondCut).interfaceId));
         assertFalse(IERC165(address(diamond)).supportsInterface(bytes4(0xffffffff)));
     }
 
@@ -218,6 +220,46 @@ contract DiamondTest is Test {
 
         assertEq(ownership.owner(), owner);
         assertEq(loupe.facetAddress(OwnershipFacet.owner.selector), address(newOwnershipFacet));
+    }
+
+    // ─── Atomic initialization ──────────────────────────────────────────────────
+
+    function test_Cut_RunsInitializerAtomically() public {
+        // A cut can delegatecall an initializer so a migration lands in the
+        // same transaction as the selector change. The init writes counter
+        // storage (in the diamond's context), proving it ran there.
+        CounterInit init = new CounterInit();
+        CounterFacetV2 v2 = new CounterFacetV2();
+
+        IDiamond.FacetCut[] memory cuts = new IDiamond.FacetCut[](1);
+        cuts[0] = _cut(address(v2), IDiamond.FacetCutAction.Add, _one(CounterFacetV2.incrementBy.selector));
+
+        vm.prank(owner);
+        cut.diamondCut(cuts, address(init), abi.encodeCall(CounterInit.setCount, (42)));
+
+        assertEq(counter.count(), 42);
+        assertEq(loupe.facetAddress(CounterFacetV2.incrementBy.selector), address(v2));
+    }
+
+    function test_RevertWhen_InitializerReverts() public {
+        // A failing initializer must revert the whole cut and bubble its reason.
+        RevertingInit init = new RevertingInit();
+
+        IDiamond.FacetCut[] memory cuts = new IDiamond.FacetCut[](0);
+
+        vm.expectRevert(RevertingInit.InitBoom.selector);
+        vm.prank(owner);
+        cut.diamondCut(cuts, address(init), abi.encodeCall(RevertingInit.boom, ()));
+    }
+
+    function test_RevertWhen_InitTargetHasNoCode() public {
+        IDiamond.FacetCut[] memory cuts = new IDiamond.FacetCut[](0);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(LibDiamond.NoBytecodeAtAddress.selector, address(0xABCD))
+        );
+        vm.prank(owner);
+        cut.diamondCut(cuts, address(0xABCD), abi.encodeWithSignature("whatever()"));
     }
 
     // ─── Storage isolation ──────────────────────────────────────────────────────
@@ -460,6 +502,25 @@ contract PingFacetA {
         s[2] = this.ping2.selector;
         s[3] = this.ping3.selector;
         s[4] = this.ping4.selector;
+    }
+}
+
+/// @dev A one-shot initializer delegatecalled by a cut. Writing counter
+///      storage here lands in the diamond's own slots, proving the init ran
+///      in the diamond's context.
+contract CounterInit {
+    function setCount(uint256 value) external {
+        LibCounter.counterStorage().count = value;
+    }
+}
+
+/// @dev An initializer that always reverts, to prove the cut aborts and the
+///      reason bubbles up.
+contract RevertingInit {
+    error InitBoom();
+
+    function boom() external pure {
+        revert InitBoom();
     }
 }
 
