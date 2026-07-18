@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IDiamondCut} from "../interfaces/IDiamondCut.sol";
 import {IDiamondLoupe} from "../interfaces/IDiamondLoupe.sol";
 import {LibDiamond} from "../libraries/LibDiamond.sol";
 
@@ -45,6 +46,7 @@ contract DiamondLoupeFacet is IDiamondLoupe, IERC165 {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IERC165).interfaceId
-            || interfaceId == type(IDiamondLoupe).interfaceId;
+            || interfaceId == type(IDiamondLoupe).interfaceId
+            || interfaceId == type(IDiamondCut).interfaceId;
     }
 }
