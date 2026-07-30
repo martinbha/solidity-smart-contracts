@@ -76,8 +76,21 @@ contract BatchDelegateTest is Test {
         assertEq(recorder.total(), 42);
         assertEq(recorder.lastSender(), account);
         assertEq(address(recorder).balance, 1 ether);
+        assertEq(account.balance, 9 ether);
         assertEq(abi.decode(results[0], (uint256)), 11);
         assertEq(abi.decode(results[1], (uint256)), 42);
+    }
+
+    function test_delegatedAccountCanReceiveEth() public {
+        vm.deal(account, 0);
+        address funder = makeAddr("funder");
+        vm.deal(funder, 1 ether);
+
+        vm.prank(funder);
+        (bool success,) = account.call{value: 0.4 ether}("");
+
+        assertTrue(success);
+        assertEq(account.balance, 0.4 ether);
     }
 
     function test_externalCallerCannotInvokeDelegatedAccount() public {
