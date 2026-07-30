@@ -2,7 +2,9 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BatchDelegate} from "../../../src/accounts/eip7702/BatchDelegate.sol";
+import {PermitToken} from "../../../src/signatures/PermitToken.sol";
 
 contract BatchRecorder {
     error ForcedFailure(bytes32 reason);
@@ -32,16 +34,26 @@ contract AlternateDelegate {
     }
 }
 
+contract BatchTokenSpender {
+    function pull(IERC20 token, address from, address to, uint256 amount) external {
+        require(token.transferFrom(from, to, amount), "transfer failed");
+    }
+}
+
 contract BatchDelegateTest is Test {
     uint256 internal constant ACCOUNT_KEY = 0xA11CE;
 
     BatchDelegate internal implementation;
     BatchRecorder internal recorder;
+    PermitToken internal token;
+    BatchTokenSpender internal spender;
     address internal account;
 
     function setUp() public {
         implementation = new BatchDelegate();
         recorder = new BatchRecorder();
+        token = new PermitToken();
+        spender = new BatchTokenSpender();
         account = vm.addr(ACCOUNT_KEY);
 
         vm.signAndAttachDelegation(address(implementation), ACCOUNT_KEY);
@@ -109,5 +121,37 @@ contract BatchDelegateTest is Test {
         vm.prank(account);
         vm.expectRevert();
         BatchDelegate(payable(account)).executeBatch(calls);
+    }
+
+    function testFuzz_approvalAndTransfersMatchSequentialExecution(uint96[6] memory rawAmounts) public {
+        uint256 total;
+        BatchDelegate.Call[] memory calls = new BatchDelegate.Call[](rawAmounts.length + 1);
+
+        for (uint256 i; i < rawAmounts.length; ++i) {
+            uint256 amount = bound(uint256(rawAmounts[i]), 0, 1_000_000 ether);
+            rawAmounts[i] = uint96(amount);
+            total += amount;
+
+            address recipient = address(uint160(0x1000 + i));
+            calls[i + 1] = BatchDelegate.Call({
+                to: address(spender),
+                value: 0,
+                data: abi.encodeCall(BatchTokenSpender.pull, (IERC20(address(token)), account, recipient, amount))
+            });
+        }
+
+        token.mint(account, total);
+        calls[0] = BatchDelegate.Call({
+            to: address(token), value: 0, data: abi.encodeCall(IERC20.approve, (address(spender), total))
+        });
+
+        vm.prank(account);
+        BatchDelegate(payable(account)).executeBatch(calls);
+
+        assertEq(token.balanceOf(account), 0);
+        assertEq(token.allowance(account, address(spender)), 0);
+        for (uint256 i; i < rawAmounts.length; ++i) {
+            assertEq(token.balanceOf(address(uint160(0x1000 + i))), uint256(rawAmounts[i]));
+        }
     }
 }
