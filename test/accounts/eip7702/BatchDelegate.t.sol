@@ -52,4 +52,12 @@ contract BatchDelegateTest is Test {
         assertEq(abi.decode(results[0], (uint256)), 11);
         assertEq(abi.decode(results[1], (uint256)), 42);
     }
+
+    function test_externalCallerCannotInvokeDelegatedAccount() public {
+        BatchDelegate.Call[] memory calls = new BatchDelegate.Call[](0);
+
+        vm.prank(makeAddr("intruder"));
+        vm.expectRevert(BatchDelegate.OnlySelf.selector);
+        BatchDelegate(payable(account)).executeBatch(calls);
+    }
 }
