@@ -5,6 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {BatchDelegate} from "../../../src/accounts/eip7702/BatchDelegate.sol";
 
 contract BatchRecorder {
+    error ForcedFailure(bytes32 reason);
+
     uint256 public calls;
     uint256 public total;
     address public lastSender;
@@ -14,6 +16,10 @@ contract BatchRecorder {
         total += amount;
         lastSender = msg.sender;
         return total;
+    }
+
+    function fail(bytes32 reason) external pure {
+        revert ForcedFailure(reason);
     }
 }
 
@@ -59,5 +65,27 @@ contract BatchDelegateTest is Test {
         vm.prank(makeAddr("intruder"));
         vm.expectRevert(BatchDelegate.OnlySelf.selector);
         BatchDelegate(payable(account)).executeBatch(calls);
+    }
+
+    function test_failingCallRevertsTheEntireBatch() public {
+        bytes32 reason = keccak256("expected failure");
+        BatchDelegate.Call[] memory calls = new BatchDelegate.Call[](3);
+        calls[0] = BatchDelegate.Call({
+            to: address(recorder), value: 1 ether, data: abi.encodeCall(BatchRecorder.record, (12))
+        });
+        calls[1] =
+            BatchDelegate.Call({to: address(recorder), value: 0, data: abi.encodeCall(BatchRecorder.fail, (reason))});
+        calls[2] =
+            BatchDelegate.Call({to: address(recorder), value: 0, data: abi.encodeCall(BatchRecorder.record, (30))});
+
+        bytes memory innerReason = abi.encodeWithSelector(BatchRecorder.ForcedFailure.selector, reason);
+        vm.prank(account);
+        vm.expectRevert(abi.encodeWithSelector(BatchDelegate.CallFailed.selector, 1, innerReason));
+        BatchDelegate(payable(account)).executeBatch(calls);
+
+        assertEq(recorder.calls(), 0);
+        assertEq(recorder.total(), 0);
+        assertEq(address(recorder).balance, 0);
+        assertEq(account.balance, 10 ether);
     }
 }
