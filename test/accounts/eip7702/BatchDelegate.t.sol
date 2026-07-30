@@ -23,6 +23,15 @@ contract BatchRecorder {
     }
 }
 
+contract AlternateDelegate {
+    error OnlySelf();
+
+    function version() external view returns (uint256) {
+        if (msg.sender != address(this)) revert OnlySelf();
+        return 2;
+    }
+}
+
 contract BatchDelegateTest is Test {
     uint256 internal constant ACCOUNT_KEY = 0xA11CE;
 
@@ -87,5 +96,18 @@ contract BatchDelegateTest is Test {
         assertEq(recorder.total(), 0);
         assertEq(address(recorder).balance, 0);
         assertEq(account.balance, 10 ether);
+    }
+
+    function test_redelegatingReplacesThePreviousBehavior() public {
+        AlternateDelegate replacement = new AlternateDelegate();
+        vm.signAndAttachDelegation(address(replacement), ACCOUNT_KEY);
+
+        vm.prank(account);
+        assertEq(AlternateDelegate(account).version(), 2);
+
+        BatchDelegate.Call[] memory calls = new BatchDelegate.Call[](0);
+        vm.prank(account);
+        vm.expectRevert();
+        BatchDelegate(payable(account)).executeBatch(calls);
     }
 }
