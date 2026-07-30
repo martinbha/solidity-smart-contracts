@@ -138,14 +138,17 @@ contract BatchDelegateTest is Test {
 
     function testFuzz_approvalAndTransfersMatchSequentialExecution(uint96[6] memory rawAmounts) public {
         uint256 total;
+        uint256[6] memory amounts;
+        address[6] memory recipients;
         BatchDelegate.Call[] memory calls = new BatchDelegate.Call[](rawAmounts.length + 1);
 
         for (uint256 i; i < rawAmounts.length; ++i) {
             uint256 amount = bound(uint256(rawAmounts[i]), 0, 1_000_000 ether);
-            rawAmounts[i] = uint96(amount);
+            address recipient = vm.addr(i + 1);
+            amounts[i] = amount;
+            recipients[i] = recipient;
             total += amount;
 
-            address recipient = address(uint160(0x1000 + i));
             calls[i + 1] = BatchDelegate.Call({
                 to: address(spender),
                 value: 0,
@@ -164,7 +167,7 @@ contract BatchDelegateTest is Test {
         assertEq(token.balanceOf(account), 0);
         assertEq(token.allowance(account, address(spender)), 0);
         for (uint256 i; i < rawAmounts.length; ++i) {
-            assertEq(token.balanceOf(address(uint160(0x1000 + i))), uint256(rawAmounts[i]));
+            assertEq(token.balanceOf(recipients[i]), amounts[i]);
         }
     }
 }
