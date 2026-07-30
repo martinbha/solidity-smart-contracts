@@ -1,3 +1,28 @@
+## EIP-7702 batch delegation
+
+`BatchDelegate` gives an EOA an atomic multicall surface while preserving the
+EOA's address, balance, and signing key. EIP-7702 executes the implementation
+in the account's context, so downstream contracts see the EOA as `msg.sender`
+and value-bearing calls spend the EOA's ETH.
+
+The delegate only accepts self-calls. A transaction signed by the delegated
+account can execute a batch, while an unrelated caller cannot exercise the
+account's authority. If any sub-call fails, the whole batch rolls back.
+Delegation persists until the account replaces or clears it, so only designate
+code that has been reviewed and whose storage layout remains compatible with
+the account's existing delegated state.
+
+Run the local demonstration:
+
+```shell
+anvil --hardfork prague
+./utils/accounts/eip7702/deploy_7702.sh
+```
+
+The script deploys the implementation, authorizes it for an Anvil EOA, executes
+an ERC-20 approval and transfer in one transaction, and verifies the account's
+delegation designator, allowance, and balances.
+
 ## Foundry
 
 **Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
