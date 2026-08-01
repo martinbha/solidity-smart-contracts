@@ -28,12 +28,15 @@ contract FlashAccountant {
     error AlreadyLocked(address locker);
     error InvalidLocker(address locker);
     error NotLocker(address caller, address locker);
+    error NoDebt(address locker, address token);
+    error IncorrectSettlement(address token, uint256 expected, uint256 received);
     error UnsettledDebt(uint256 tokenCount);
     error ZeroAmount();
 
     event LockOpened(address indexed locker);
     event LockClosed(address indexed locker);
     event Taken(address indexed locker, address indexed token, uint256 amount, uint256 debt);
+    event Settled(address indexed locker, address indexed token, uint256 amount);
 
     modifier onlyLocker() {
         address locker = _locker;
@@ -82,6 +85,26 @@ contract FlashAccountant {
 
         IERC20(token).safeTransfer(msg.sender, amount);
         emit Taken(msg.sender, token, amount, updatedDebt);
+    }
+
+    /// @notice Pulls the locker's entire debt for one token and clears its
+    ///         transient slot. Fee-on-transfer repayment is rejected because
+    ///         flash accounting must finish with exact asset conservation.
+    function settle(address token) external onlyLocker {
+        bytes32 slot = _debtSlot(msg.sender, token);
+        uint256 amount = _tload(slot);
+        if (amount == 0) revert NoDebt(msg.sender, token);
+
+        IERC20 asset = IERC20(token);
+        uint256 balanceBefore = asset.balanceOf(address(this));
+        asset.safeTransferFrom(msg.sender, address(this), amount);
+        uint256 balanceAfter = asset.balanceOf(address(this));
+        uint256 received = balanceAfter >= balanceBefore ? balanceAfter - balanceBefore : 0;
+        if (received != amount) revert IncorrectSettlement(token, amount, received);
+
+        _tstore(slot, 0);
+        _unsettledDebtCount--;
+        emit Settled(msg.sender, token, amount);
     }
 
     function debt(address locker, address token) external view returns (uint256) {
