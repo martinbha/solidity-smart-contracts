@@ -135,6 +135,23 @@ contract TransientStorageTest is Test {
         assertEq(storageVault.balances(address(attacker)), 0);
     }
 
+    function test_transientGuardCostsLessGasThanStorageGuard() public {
+        uint256 gasBefore = gasleft();
+        transientVault.guardedNoop();
+        uint256 transientGas = gasBefore - gasleft();
+
+        gasBefore = gasleft();
+        storageVault.guardedNoop();
+        uint256 storageGas = gasBefore - gasleft();
+
+        uint256 gasSaved = storageGas > transientGas ? storageGas - transientGas : 0;
+        emit log_named_uint("transient guard gas", transientGas);
+        emit log_named_uint("storage guard gas", storageGas);
+        emit log_named_uint("gas saved", gasSaved);
+
+        assertLt(transientGas, storageGas);
+    }
+
     function test_flashSessionCanTakeAndSettleToZero() public {
         uint256 balanceBefore = token.balanceOf(address(accountant));
         FlashBorrower.Action[] memory actions = new FlashBorrower.Action[](1);
