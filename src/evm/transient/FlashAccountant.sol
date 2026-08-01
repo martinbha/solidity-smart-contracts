@@ -29,6 +29,7 @@ contract FlashAccountant {
     error InvalidLocker(address locker);
     error NotLocker(address caller, address locker);
     error NoDebt(address locker, address token);
+    error IncorrectTake(address token, uint256 expected, uint256 spent);
     error IncorrectSettlement(address token, uint256 expected, uint256 received);
     error UnsettledDebt(uint256 tokenCount);
     error ZeroAmount();
@@ -83,7 +84,13 @@ contract FlashAccountant {
         if (currentDebt == 0) _unsettledDebtCount++;
         _tstore(slot, updatedDebt);
 
-        IERC20(token).safeTransfer(msg.sender, amount);
+        IERC20 asset = IERC20(token);
+        uint256 balanceBefore = asset.balanceOf(address(this));
+        asset.safeTransfer(msg.sender, amount);
+        uint256 balanceAfter = asset.balanceOf(address(this));
+        uint256 spent = balanceBefore >= balanceAfter ? balanceBefore - balanceAfter : 0;
+        if (spent != amount) revert IncorrectTake(token, amount, spent);
+
         emit Taken(msg.sender, token, amount, updatedDebt);
     }
 
