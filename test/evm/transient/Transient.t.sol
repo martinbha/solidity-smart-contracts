@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {TransientVault} from "../../../src/evm/transient/TransientReentrancyGuard.sol";
 import {StorageVault} from "../../../src/evm/transient/StorageReentrancyGuard.sol";
@@ -13,6 +14,19 @@ interface IGuardedVault {
     function withdraw(uint256 amount) external;
     function guardedNoop() external;
     function balances(address account) external view returns (uint256);
+}
+
+contract SenderFeeToken is ERC20 {
+    constructor() ERC20("Sender Fee Token", "SFT") {}
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function _update(address from, address to, uint256 amount) internal override {
+        super._update(from, to, amount);
+        if (from != address(0) && to != address(0)) super._update(from, address(0), amount / 10);
+    }
 }
 
 contract ReentrantWithdrawer {
@@ -212,6 +226,25 @@ contract TransientStorageTest is Test {
         assertEq(token.balanceOf(address(accountant)), balanceBefore);
         assertEq(token.balanceOf(address(borrower)), 0);
         assertEq(accountant.currentLocker(), address(0));
+    }
+
+    function test_senderTransferFeeCannotLeaveTheAccountantShort() public {
+        SenderFeeToken feeToken = new SenderFeeToken();
+        FlashBorrower feeBorrower = new FlashBorrower(accountant, IERC20(address(feeToken)));
+        feeToken.mint(address(accountant), 1_000 ether);
+
+        FlashBorrower.Action[] memory actions = new FlashBorrower.Action[](1);
+        actions[0] = FlashBorrower.Action({amount: 100 ether, settle: true, nestedLock: false});
+
+        vm.expectRevert(
+            abi.encodeWithSelector(FlashAccountant.IncorrectTake.selector, address(feeToken), 100 ether, 110 ether)
+        );
+        feeBorrower.run(actions);
+
+        assertEq(feeToken.balanceOf(address(accountant)), 1_000 ether);
+        assertEq(feeToken.balanceOf(address(feeBorrower)), 0);
+        assertEq(accountant.currentLocker(), address(0));
+        assertEq(accountant.outstandingDebtCount(), 0);
     }
 
     function test_multipleTokenDebtsAreCountedAndSettledIndependently() public {
