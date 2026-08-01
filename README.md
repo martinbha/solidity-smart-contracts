@@ -36,9 +36,11 @@ transaction and automatically discarded at transaction end:
   tracks each debt in a derived `tstore` slot, and reverts the whole session
   unless every token debt is repaid exactly.
 
-The flash-accounting lock rejects nested sessions. Only the current callback
-contract can take or settle assets, and fee-on-transfer repayment is rejected
-because the accountant verifies its exact balance increase.
+The flash-accounting lock rejects nested sessions, but a contract may open a
+new session after the previous one settles and closes, including later in the
+same transaction. Only the current callback contract can take or settle
+assets. The accountant verifies its exact balance decrease and increase, so an
+unexpected sender fee or fee-on-transfer repayment reverts the session.
 
 Run the live demonstration on a local EVM with EIP-1153 support:
 
