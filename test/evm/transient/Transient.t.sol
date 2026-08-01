@@ -187,4 +187,32 @@ contract TransientStorageTest is Test {
         vm.expectRevert(abi.encodeWithSelector(FlashAccountant.NotLocker.selector, address(this), address(0)));
         accountant.settle(address(token));
     }
+
+    function testFuzz_randomTakeSettleSequencesSucceedOnlyAtZeroDebt(
+        uint96[8] memory rawAmounts,
+        bool[8] memory settles
+    ) public {
+        FlashBorrower.Action[] memory actions = new FlashBorrower.Action[](rawAmounts.length);
+        uint256 pendingDebt;
+
+        for (uint256 i; i < rawAmounts.length; ++i) {
+            uint256 amount = bound(uint256(rawAmounts[i]), 1, 100_000 ether);
+            actions[i] = FlashBorrower.Action({amount: amount, settle: settles[i], nestedLock: false});
+            pendingDebt += amount;
+            if (settles[i]) pendingDebt = 0;
+        }
+
+        uint256 accountantBalance = token.balanceOf(address(accountant));
+        if (pendingDebt == 0) {
+            borrower.run(actions);
+        } else {
+            vm.expectRevert(abi.encodeWithSelector(FlashAccountant.UnsettledDebt.selector, 1));
+            borrower.run(actions);
+        }
+
+        assertEq(token.balanceOf(address(accountant)), accountantBalance);
+        assertEq(token.balanceOf(address(borrower)), 0);
+        assertEq(accountant.currentLocker(), address(0));
+        assertEq(accountant.outstandingDebtCount(), 0);
+    }
 }
