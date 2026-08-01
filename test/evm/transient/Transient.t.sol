@@ -281,6 +281,20 @@ contract TransientStorageTest is Test {
         assertEq(accountant.currentLocker(), address(0));
     }
 
+    function test_settledSessionCanRelockSequentiallyInTheSameTransaction() public {
+        uint256 balanceBefore = token.balanceOf(address(accountant));
+        FlashBorrower.Action[] memory actions = new FlashBorrower.Action[](1);
+        actions[0] = FlashBorrower.Action({amount: 100 ether, settle: true, nestedLock: false});
+
+        borrower.run(actions);
+        borrower.run(actions);
+
+        assertEq(token.balanceOf(address(accountant)), balanceBefore);
+        assertEq(token.balanceOf(address(borrower)), 0);
+        assertEq(accountant.currentLocker(), address(0));
+        assertEq(accountant.outstandingDebtCount(), 0);
+    }
+
     function test_onlyContractsCanOpenSessions() public {
         address caller = makeAddr("caller");
 
