@@ -23,6 +23,35 @@ The script deploys the implementation, authorizes it for an Anvil EOA, executes
 an ERC-20 approval and transfer in one transaction, and verifies the account's
 delegation designator, allowance, and balances.
 
+## EIP-1153 transient storage
+
+The transient-storage examples use state that is shared across calls in one
+transaction and automatically discarded at transaction end:
+
+- `TransientReentrancyGuard` implements a conventional reset-after-call guard
+  with Solidity's `transient` storage location.
+- `StorageReentrancyGuard` provides an equivalent persistent-storage baseline
+  for direct gas comparisons.
+- `FlashAccountant` opens one callback lock, lets the locker take ERC-20 assets,
+  tracks each debt in a derived `tstore` slot, and reverts the whole session
+  unless every token debt is repaid exactly.
+
+The flash-accounting lock rejects nested sessions. Only the current callback
+contract can take or settle assets, and fee-on-transfer repayment is rejected
+because the accountant verifies its exact balance increase.
+
+Run the live demonstration on a local EVM with EIP-1153 support:
+
+```shell
+anvil --hardfork osaka
+./utils/evm/transient/deploy_transient.sh
+```
+
+The script verifies a settled session, confirms an unsettled session reverts,
+and prints transient-versus-storage guard gas estimates. The Foundry test also
+prints a reproducible comparison with `forge test --match-test
+test_transientGuardCostsLessGasThanStorageGuard -vv`.
+
 ## Foundry
 
 **Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
