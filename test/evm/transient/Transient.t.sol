@@ -90,21 +90,56 @@ contract FlashBorrower is IFlashAccountantCallback {
     }
 }
 
+contract MultiTokenBorrower is IFlashAccountantCallback {
+    FlashAccountant public immutable accountant;
+    IERC20 public immutable tokenA;
+    IERC20 public immutable tokenB;
+    uint256 public observedDebtCount;
+
+    constructor(FlashAccountant accountant_, IERC20 tokenA_, IERC20 tokenB_) {
+        accountant = accountant_;
+        tokenA = tokenA_;
+        tokenB = tokenB_;
+        require(tokenA_.approve(address(accountant_), type(uint256).max), "approve A failed");
+        require(tokenB_.approve(address(accountant_), type(uint256).max), "approve B failed");
+    }
+
+    function run(bool settleSecondToken) external {
+        accountant.lock(abi.encode(settleSecondToken));
+    }
+
+    function lockAcquired(bytes calldata data) external {
+        require(msg.sender == address(accountant), "not accountant");
+        bool settleSecondToken = abi.decode(data, (bool));
+
+        accountant.take(address(tokenA), 10 ether);
+        accountant.take(address(tokenB), 20 ether);
+        observedDebtCount = accountant.outstandingDebtCount();
+        accountant.settle(address(tokenA));
+        if (settleSecondToken) accountant.settle(address(tokenB));
+    }
+}
+
 contract TransientStorageTest is Test {
     TransientVault internal transientVault;
     StorageVault internal storageVault;
     FlashAccountant internal accountant;
     PermitToken internal token;
+    PermitToken internal secondToken;
     FlashBorrower internal borrower;
+    MultiTokenBorrower internal multiTokenBorrower;
 
     function setUp() public {
         transientVault = new TransientVault();
         storageVault = new StorageVault();
         accountant = new FlashAccountant();
         token = new PermitToken();
+        secondToken = new PermitToken();
         borrower = new FlashBorrower(accountant, IERC20(address(token)));
+        multiTokenBorrower = new MultiTokenBorrower(accountant, IERC20(address(token)), IERC20(address(secondToken)));
 
         token.mint(address(accountant), 1_000_000 ether);
+        secondToken.mint(address(accountant), 1_000_000 ether);
     }
 
     function test_transientGuardBlocksReentrantWithdrawal() public {
@@ -177,6 +212,30 @@ contract TransientStorageTest is Test {
         assertEq(token.balanceOf(address(accountant)), balanceBefore);
         assertEq(token.balanceOf(address(borrower)), 0);
         assertEq(accountant.currentLocker(), address(0));
+    }
+
+    function test_multipleTokenDebtsAreCountedAndSettledIndependently() public {
+        uint256 balanceABefore = token.balanceOf(address(accountant));
+        uint256 balanceBBefore = secondToken.balanceOf(address(accountant));
+
+        multiTokenBorrower.run(true);
+
+        assertEq(multiTokenBorrower.observedDebtCount(), 2);
+        assertEq(token.balanceOf(address(accountant)), balanceABefore);
+        assertEq(secondToken.balanceOf(address(accountant)), balanceBBefore);
+        assertEq(accountant.outstandingDebtCount(), 0);
+    }
+
+    function test_oneUnsettledTokenRevertsAMultiTokenSession() public {
+        uint256 balanceABefore = token.balanceOf(address(accountant));
+        uint256 balanceBBefore = secondToken.balanceOf(address(accountant));
+
+        vm.expectRevert(abi.encodeWithSelector(FlashAccountant.UnsettledDebt.selector, 1));
+        multiTokenBorrower.run(false);
+
+        assertEq(token.balanceOf(address(accountant)), balanceABefore);
+        assertEq(secondToken.balanceOf(address(accountant)), balanceBBefore);
+        assertEq(accountant.outstandingDebtCount(), 0);
     }
 
     function test_nestedLockIsRejectedWhileOuterSessionContinues() public {
