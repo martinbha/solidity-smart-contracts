@@ -47,10 +47,12 @@ contract FlashBorrower is IFlashAccountantCallback {
     struct Action {
         uint256 amount;
         bool settle;
+        bool nestedLock;
     }
 
     FlashAccountant public immutable accountant;
     IERC20 public immutable token;
+    bool public nestedLockBlocked;
 
     constructor(FlashAccountant accountant_, IERC20 token_) {
         accountant = accountant_;
@@ -67,10 +69,23 @@ contract FlashBorrower is IFlashAccountantCallback {
         Action[] memory actions = abi.decode(data, (Action[]));
 
         for (uint256 i; i < actions.length; ++i) {
+            if (actions[i].nestedLock) {
+                try accountant.lock("") {}
+                catch (bytes memory reason) {
+                    nestedLockBlocked = _selector(reason) == FlashAccountant.AlreadyLocked.selector;
+                }
+            }
             if (actions[i].amount != 0) accountant.take(address(token), actions[i].amount);
             if (actions[i].settle && accountant.debt(address(this), address(token)) != 0) {
                 accountant.settle(address(token));
             }
+        }
+    }
+
+    function _selector(bytes memory reason) private pure returns (bytes4 selector) {
+        if (reason.length < 4) return bytes4(0);
+        assembly ("memory-safe") {
+            selector := mload(add(reason, 0x20))
         }
     }
 }
@@ -123,7 +138,7 @@ contract TransientStorageTest is Test {
     function test_flashSessionCanTakeAndSettleToZero() public {
         uint256 balanceBefore = token.balanceOf(address(accountant));
         FlashBorrower.Action[] memory actions = new FlashBorrower.Action[](1);
-        actions[0] = FlashBorrower.Action({amount: 100 ether, settle: true});
+        actions[0] = FlashBorrower.Action({amount: 100 ether, settle: true, nestedLock: false});
 
         borrower.run(actions);
 
@@ -137,7 +152,7 @@ contract TransientStorageTest is Test {
     function test_unsettledDebtRevertsTheWholeSession() public {
         uint256 balanceBefore = token.balanceOf(address(accountant));
         FlashBorrower.Action[] memory actions = new FlashBorrower.Action[](1);
-        actions[0] = FlashBorrower.Action({amount: 100 ether, settle: false});
+        actions[0] = FlashBorrower.Action({amount: 100 ether, settle: false, nestedLock: false});
 
         vm.expectRevert(abi.encodeWithSelector(FlashAccountant.UnsettledDebt.selector, 1));
         borrower.run(actions);
@@ -145,5 +160,31 @@ contract TransientStorageTest is Test {
         assertEq(token.balanceOf(address(accountant)), balanceBefore);
         assertEq(token.balanceOf(address(borrower)), 0);
         assertEq(accountant.currentLocker(), address(0));
+    }
+
+    function test_nestedLockIsRejectedWhileOuterSessionContinues() public {
+        FlashBorrower.Action[] memory actions = new FlashBorrower.Action[](1);
+        actions[0] = FlashBorrower.Action({amount: 0, settle: false, nestedLock: true});
+
+        borrower.run(actions);
+
+        assertTrue(borrower.nestedLockBlocked());
+        assertEq(accountant.currentLocker(), address(0));
+    }
+
+    function test_onlyContractsCanOpenSessions() public {
+        address caller = makeAddr("caller");
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(FlashAccountant.InvalidLocker.selector, caller));
+        accountant.lock("");
+    }
+
+    function test_takeAndSettleRequireTheCurrentLocker() public {
+        vm.expectRevert(abi.encodeWithSelector(FlashAccountant.NotLocker.selector, address(this), address(0)));
+        accountant.take(address(token), 1);
+
+        vm.expectRevert(abi.encodeWithSelector(FlashAccountant.NotLocker.selector, address(this), address(0)));
+        accountant.settle(address(token));
     }
 }
