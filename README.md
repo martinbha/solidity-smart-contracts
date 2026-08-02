@@ -54,6 +54,37 @@ and prints transient-versus-storage guard gas estimates. The Foundry test also
 prints a reproducible comparison with `forge test --match-test
 test_transientGuardCostsLessGasThanStorageGuard -vv`.
 
+## Optimistic oracle
+
+The optimistic-oracle example turns truth into a bonded challenge game. An
+asserter posts a fixed ERC-20 bond and chooses a value. If nobody disputes it
+before the deadline, anyone can settle that value and return the bond through
+the pull-payment ledger. A disputer posts the same bond and sends the claim to
+the resolver; whichever side matches the resolved truth receives both bonds.
+
+`OptimisticOracle` verifies exact token movement and exposes escrowed and
+withdrawable totals so its solvency can be checked continuously. The stateful
+invariant tests randomly assert, dispute, settle, resolve, withdraw, and advance
+time while proving that no bonded value is created or lost. `InsurancePool`
+demonstrates a consumer that pays only the named policyholder and only after
+the corresponding claim resolves true.
+
+The resolver is a trusted address in this teaching implementation. A
+production design can replace that decision point with token-holder voting or
+another decentralized verification mechanism without changing the optimistic
+undisputed path.
+
+Run both the undisputed insurance payout and disputed-resolution flows locally:
+
+```shell
+anvil
+./utils/oracle/deploy_oracle.sh
+```
+
+The script verifies early payout rejection, challenge-window settlement, the
+insurance payout, resolver-only dispute handling, winner-takes-both bond
+accounting, and the oracle's final zero balance.
+
 ## Foundry
 
 **Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
