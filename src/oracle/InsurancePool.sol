@@ -36,7 +36,7 @@ contract InsurancePool is ReentrancyGuard {
     error PolicyAlreadyClaimed(bytes32 claimId);
     error OracleResultUnresolved(bytes32 claimId);
     error ClaimNotPayable(bytes32 claimId);
-    error IncorrectPayout(uint256 expected, uint256 spent);
+    error IncorrectPayout(uint256 expected, uint256 spent, uint256 received);
 
     constructor(OptimisticOracle oracle_, IERC20 payoutToken_) {
         if (address(oracle_) == address(0) || address(payoutToken_) == address(0)) revert InvalidConfiguration();
@@ -66,10 +66,16 @@ contract InsurancePool is ReentrancyGuard {
 
         policy.claimed = true;
         uint256 balanceBefore = payoutToken.balanceOf(address(this));
+        uint256 recipientBalanceBefore = payoutToken.balanceOf(msg.sender);
         payoutToken.safeTransfer(msg.sender, policy.payout);
         uint256 balanceAfter = payoutToken.balanceOf(address(this));
+        uint256 recipientBalanceAfter = payoutToken.balanceOf(msg.sender);
         uint256 spent = balanceBefore >= balanceAfter ? balanceBefore - balanceAfter : 0;
-        if (spent != policy.payout) revert IncorrectPayout(policy.payout, spent);
+        uint256 received =
+            recipientBalanceAfter >= recipientBalanceBefore ? recipientBalanceAfter - recipientBalanceBefore : 0;
+        if (spent != policy.payout || received != policy.payout) {
+            revert IncorrectPayout(policy.payout, spent, received);
+        }
 
         emit InsurancePaid(claimId, msg.sender, policy.payout);
     }
