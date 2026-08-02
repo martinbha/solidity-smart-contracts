@@ -20,7 +20,7 @@ contract OutgoingFeeToken is ERC20 {
     }
 
     function _update(address from, address to, uint256 amount) internal override {
-        if (from == feeSender && to != address(0)) {
+        if (feeSender != address(0) && from == feeSender && to != address(0)) {
             uint256 fee = amount / 10;
             super._update(from, to, amount - fee);
             super._update(from, address(0), fee);
