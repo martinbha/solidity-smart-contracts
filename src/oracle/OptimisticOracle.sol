@@ -50,7 +50,7 @@ contract OptimisticOracle is ReentrancyGuard {
     error ChallengeWindowClosed(uint40 deadline);
     error NotResolver(address caller);
     error IncorrectBondTransfer(uint256 expected, uint256 received);
-    error IncorrectBondPayout(uint256 expected, uint256 spent);
+    error IncorrectBondPayout(uint256 expected, uint256 spent, uint256 received);
     error NoBondToWithdraw();
 
     constructor(IERC20 bondToken_, address resolver_, uint256 bondAmount_, uint40 challengeWindow_) {
@@ -151,10 +151,14 @@ contract OptimisticOracle is ReentrancyGuard {
         totalWithdrawableBonds -= amount;
 
         uint256 balanceBefore = bondToken.balanceOf(address(this));
+        uint256 recipientBalanceBefore = bondToken.balanceOf(msg.sender);
         bondToken.safeTransfer(msg.sender, amount);
         uint256 balanceAfter = bondToken.balanceOf(address(this));
+        uint256 recipientBalanceAfter = bondToken.balanceOf(msg.sender);
         uint256 spent = balanceBefore >= balanceAfter ? balanceBefore - balanceAfter : 0;
-        if (spent != amount) revert IncorrectBondPayout(amount, spent);
+        uint256 received =
+            recipientBalanceAfter >= recipientBalanceBefore ? recipientBalanceAfter - recipientBalanceBefore : 0;
+        if (spent != amount || received != amount) revert IncorrectBondPayout(amount, spent, received);
 
         emit BondWithdrawn(msg.sender, amount);
     }
