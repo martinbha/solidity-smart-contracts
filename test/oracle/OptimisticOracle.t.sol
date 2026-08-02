@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {BondToken} from "../../src/oracle/BondToken.sol";
 import {OptimisticOracle} from "../../src/oracle/OptimisticOracle.sol";
+import {OutgoingFeeToken} from "./OutgoingFeeToken.sol";
 
 contract OptimisticOracleTest is Test {
     BondToken internal bondToken;
@@ -115,6 +116,30 @@ contract OptimisticOracleTest is Test {
         vm.expectRevert(OptimisticOracle.NoBondToWithdraw.selector);
         vm.prank(alice);
         oracle.withdrawBond();
+    }
+
+    function test_recipientFeeCannotShortchangeBondWinner() public {
+        OutgoingFeeToken feeToken = new OutgoingFeeToken();
+        OptimisticOracle feeOracle = new OptimisticOracle(feeToken, resolver, BOND, CHALLENGE_WINDOW);
+        feeToken.mint(alice, 1_000 ether);
+        vm.prank(alice);
+        feeToken.approve(address(feeOracle), type(uint256).max);
+
+        vm.prank(alice);
+        feeOracle.assertTruth(CLAIM, true);
+        OptimisticOracle.Assertion memory assertion = feeOracle.getAssertion(CLAIM);
+        vm.warp(assertion.deadline + 1);
+        feeOracle.settle(CLAIM);
+        feeToken.setFeeSender(address(feeOracle));
+
+        vm.expectRevert(abi.encodeWithSelector(OptimisticOracle.IncorrectBondPayout.selector, BOND, BOND, 90 ether));
+        vm.prank(alice);
+        feeOracle.withdrawBond();
+
+        assertEq(feeOracle.withdrawableBonds(alice), BOND);
+        assertEq(feeOracle.totalWithdrawableBonds(), BOND);
+        assertEq(feeToken.balanceOf(address(feeOracle)), BOND);
+        assertEq(feeToken.balanceOf(alice), 900 ether);
     }
 
     function test_disputedAssertionCannotUseUndisputedSettlement() public {
