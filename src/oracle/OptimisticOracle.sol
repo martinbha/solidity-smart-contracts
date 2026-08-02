@@ -36,6 +36,7 @@ contract OptimisticOracle is ReentrancyGuard {
     event AssertionDisputed(bytes32 indexed claimId, address indexed disputer);
     event AssertionSettled(bytes32 indexed claimId, bool value, address indexed recipient, uint256 reward);
     event AssertionResolved(bytes32 indexed claimId, bool value, address indexed winner, uint256 reward);
+    event BondWithdrawn(address indexed account, uint256 amount);
 
     error InvalidConfiguration();
     error AssertionAlreadyExists(bytes32 claimId);
@@ -49,6 +50,8 @@ contract OptimisticOracle is ReentrancyGuard {
     error ChallengeWindowClosed(uint40 deadline);
     error NotResolver(address caller);
     error IncorrectBondTransfer(uint256 expected, uint256 received);
+    error IncorrectBondPayout(uint256 expected, uint256 spent);
+    error NoBondToWithdraw();
 
     constructor(IERC20 bondToken_, address resolver_, uint256 bondAmount_, uint40 challengeWindow_) {
         if (address(bondToken_) == address(0) || resolver_ == address(0) || bondAmount_ == 0 || challengeWindow_ == 0) {
@@ -137,6 +140,28 @@ contract OptimisticOracle is ReentrancyGuard {
         _credit(winner, reward);
 
         emit AssertionResolved(claimId, truth, winner, reward);
+    }
+
+    /// @notice Pull all assertion rewards credited to the caller.
+    function withdrawBond() external nonReentrant {
+        uint256 amount = withdrawableBonds[msg.sender];
+        if (amount == 0) revert NoBondToWithdraw();
+
+        withdrawableBonds[msg.sender] = 0;
+        totalWithdrawableBonds -= amount;
+
+        uint256 balanceBefore = bondToken.balanceOf(address(this));
+        bondToken.safeTransfer(msg.sender, amount);
+        uint256 balanceAfter = bondToken.balanceOf(address(this));
+        uint256 spent = balanceBefore >= balanceAfter ? balanceBefore - balanceAfter : 0;
+        if (spent != amount) revert IncorrectBondPayout(amount, spent);
+
+        emit BondWithdrawn(msg.sender, amount);
+    }
+
+    /// @notice Bonds physically held should always equal escrow plus credits.
+    function accountedBondBalance() external view returns (uint256) {
+        return totalEscrowedBonds + totalWithdrawableBonds;
     }
 
     function getResult(bytes32 claimId) external view returns (bool resolved, bool value) {
