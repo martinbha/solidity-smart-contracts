@@ -31,6 +31,13 @@ contract OptimisticOracleTest is Test {
         bondToken.approve(address(oracle), type(uint256).max);
     }
 
+    function _assertAndDispute(bool assertedValue) internal {
+        vm.prank(alice);
+        oracle.assertTruth(CLAIM, assertedValue);
+        vm.prank(bob);
+        oracle.disputeAssertion(CLAIM);
+    }
+
     function test_undisputedAssertionSettlesAfterChallengeWindow() public {
         vm.prank(alice);
         oracle.assertTruth(CLAIM, true);
@@ -108,5 +115,106 @@ contract OptimisticOracleTest is Test {
         vm.expectRevert(OptimisticOracle.NoBondToWithdraw.selector);
         vm.prank(alice);
         oracle.withdrawBond();
+    }
+
+    function test_disputedAssertionCannotUseUndisputedSettlement() public {
+        _assertAndDispute(true);
+        OptimisticOracle.Assertion memory assertion = oracle.getAssertion(CLAIM);
+        vm.warp(assertion.deadline + 1);
+
+        vm.expectRevert(abi.encodeWithSelector(OptimisticOracle.DisputedAssertionCannotSettle.selector, CLAIM));
+        oracle.settle(CLAIM);
+    }
+
+    function test_onlyResolverCanDecideDisputedAssertion() public {
+        _assertAndDispute(true);
+
+        vm.expectRevert(abi.encodeWithSelector(OptimisticOracle.NotResolver.selector, bob));
+        vm.prank(bob);
+        oracle.resolve(CLAIM, true);
+
+        vm.prank(resolver);
+        oracle.resolve(CLAIM, true);
+        assertEq(oracle.withdrawableBonds(alice), 2 * BOND);
+    }
+
+    function test_truthfulAsserterTakesBothBondsFromFrivolousDispute() public {
+        _assertAndDispute(true);
+
+        vm.prank(resolver);
+        oracle.resolve(CLAIM, true);
+
+        assertEq(oracle.withdrawableBonds(alice), 2 * BOND);
+        assertEq(oracle.withdrawableBonds(bob), 0);
+        assertEq(oracle.totalEscrowedBonds(), 0);
+        assertEq(oracle.totalWithdrawableBonds(), 2 * BOND);
+
+        vm.prank(alice);
+        oracle.withdrawBond();
+        assertEq(bondToken.balanceOf(alice), 1_100 ether);
+        assertEq(bondToken.balanceOf(bob), 900 ether);
+    }
+
+    function test_wrongAsserterLosesBondToDisputer() public {
+        _assertAndDispute(false);
+
+        vm.prank(resolver);
+        oracle.resolve(CLAIM, true);
+
+        (bool resolved, bool value) = oracle.getResult(CLAIM);
+        assertTrue(resolved);
+        assertTrue(value);
+        assertEq(oracle.withdrawableBonds(alice), 0);
+        assertEq(oracle.withdrawableBonds(bob), 2 * BOND);
+
+        vm.prank(bob);
+        oracle.withdrawBond();
+        assertEq(bondToken.balanceOf(alice), 900 ether);
+        assertEq(bondToken.balanceOf(bob), 1_100 ether);
+    }
+
+    function test_underfundedDisputerCannotPostCounterBond() public {
+        vm.prank(alice);
+        oracle.assertTruth(CLAIM, true);
+        vm.prank(carol);
+        bondToken.approve(address(oracle), type(uint256).max);
+
+        vm.expectRevert();
+        vm.prank(carol);
+        oracle.disputeAssertion(CLAIM);
+
+        OptimisticOracle.Assertion memory assertion = oracle.getAssertion(CLAIM);
+        assertFalse(assertion.disputed);
+        assertEq(assertion.disputer, address(0));
+        assertEq(oracle.totalEscrowedBonds(), BOND);
+    }
+
+    function test_disputeAfterChallengeWindowReverts() public {
+        vm.prank(alice);
+        oracle.assertTruth(CLAIM, true);
+        OptimisticOracle.Assertion memory assertion = oracle.getAssertion(CLAIM);
+        vm.warp(assertion.deadline + 1);
+
+        vm.expectRevert(abi.encodeWithSelector(OptimisticOracle.ChallengeWindowClosed.selector, assertion.deadline));
+        vm.prank(bob);
+        oracle.disputeAssertion(CLAIM);
+    }
+
+    function test_asserterCannotDisputeOwnClaim() public {
+        vm.prank(alice);
+        oracle.assertTruth(CLAIM, true);
+
+        vm.expectRevert(OptimisticOracle.CannotDisputeOwnAssertion.selector);
+        vm.prank(alice);
+        oracle.disputeAssertion(CLAIM);
+    }
+
+    function test_undisputedAssertionCannotBeResolvedByAdmin() public {
+        vm.prank(alice);
+        oracle.assertTruth(CLAIM, true);
+
+        vm.expectRevert(abi.encodeWithSelector(OptimisticOracle.AssertionNotDisputed.selector, CLAIM));
+        vm.prank(resolver);
+        oracle.resolve(CLAIM, true);
     }
 }
