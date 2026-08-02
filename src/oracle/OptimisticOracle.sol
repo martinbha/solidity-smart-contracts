@@ -27,13 +27,20 @@ contract OptimisticOracle is ReentrancyGuard {
     uint40 public immutable challengeWindow;
 
     mapping(bytes32 claimId => Assertion assertion) private _assertions;
+    mapping(address account => uint256 amount) public withdrawableBonds;
 
     uint256 public totalEscrowedBonds;
+    uint256 public totalWithdrawableBonds;
 
     event TruthAsserted(bytes32 indexed claimId, address indexed asserter, bool value, uint40 deadline);
+    event AssertionSettled(bytes32 indexed claimId, bool value, address indexed recipient, uint256 reward);
 
     error InvalidConfiguration();
     error AssertionAlreadyExists(bytes32 claimId);
+    error AssertionNotFound(bytes32 claimId);
+    error AssertionAlreadyResolved(bytes32 claimId);
+    error AssertionDisputed(bytes32 claimId);
+    error ChallengeWindowOpen(uint40 deadline);
     error IncorrectBondTransfer(uint256 expected, uint256 received);
 
     constructor(IERC20 bondToken_, address resolver_, uint256 bondAmount_, uint40 challengeWindow_) {
@@ -68,6 +75,24 @@ contract OptimisticOracle is ReentrancyGuard {
         emit TruthAsserted(claimId, msg.sender, value, deadline);
     }
 
+    /// @notice Finalize an undisputed assertion after its challenge window.
+    ///         The asserter's bond becomes available through pull payment.
+    function settle(bytes32 claimId) external {
+        Assertion storage assertion = _assertions[claimId];
+        if (assertion.asserter == address(0)) revert AssertionNotFound(claimId);
+        if (assertion.resolved) revert AssertionAlreadyResolved(claimId);
+        if (assertion.disputed) revert AssertionDisputed(claimId);
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp <= assertion.deadline) revert ChallengeWindowOpen(assertion.deadline);
+
+        assertion.resolved = true;
+        assertion.result = assertion.assertedValue;
+        totalEscrowedBonds -= bondAmount;
+        _credit(assertion.asserter, bondAmount);
+
+        emit AssertionSettled(claimId, assertion.result, assertion.asserter, bondAmount);
+    }
+
     function getResult(bytes32 claimId) external view returns (bool resolved, bool value) {
         Assertion storage assertion = _assertions[claimId];
         return (assertion.resolved, assertion.result);
@@ -83,5 +108,10 @@ contract OptimisticOracle is ReentrancyGuard {
         uint256 balanceAfter = bondToken.balanceOf(address(this));
         uint256 received = balanceAfter >= balanceBefore ? balanceAfter - balanceBefore : 0;
         if (received != bondAmount) revert IncorrectBondTransfer(bondAmount, received);
+    }
+
+    function _credit(address account, uint256 amount) private {
+        withdrawableBonds[account] += amount;
+        totalWithdrawableBonds += amount;
     }
 }
