@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {BondToken} from "../../src/oracle/BondToken.sol";
 import {OptimisticOracle} from "../../src/oracle/OptimisticOracle.sol";
 import {InsurancePool} from "../../src/oracle/InsurancePool.sol";
+import {OutgoingFeeToken} from "./OutgoingFeeToken.sol";
 
 contract InsurancePoolTest is Test {
     BondToken internal bondToken;
@@ -87,6 +88,32 @@ contract InsurancePoolTest is Test {
         vm.expectRevert(abi.encodeWithSelector(InsurancePool.PolicyAlreadyClaimed.selector, CLAIM));
         vm.prank(alice);
         pool.claim(CLAIM);
+    }
+
+    function test_recipientFeeCannotShortchangePolicyholder() public {
+        OutgoingFeeToken feeToken = new OutgoingFeeToken();
+        OptimisticOracle feeOracle = new OptimisticOracle(feeToken, resolver, BOND, CHALLENGE_WINDOW);
+        InsurancePool feePool = new InsurancePool(feeOracle, feeToken);
+        feeToken.mint(alice, 1_000 ether);
+        feeToken.mint(address(feePool), 1_000 ether);
+        feePool.createPolicy(CLAIM, alice, PAYOUT);
+        vm.prank(alice);
+        feeToken.approve(address(feeOracle), type(uint256).max);
+
+        vm.prank(alice);
+        feeOracle.assertTruth(CLAIM, true);
+        OptimisticOracle.Assertion memory assertion = feeOracle.getAssertion(CLAIM);
+        vm.warp(assertion.deadline + 1);
+        feeOracle.settle(CLAIM);
+        feeToken.setFeeSender(address(feePool));
+
+        vm.expectRevert(abi.encodeWithSelector(InsurancePool.IncorrectPayout.selector, PAYOUT, PAYOUT, 450 ether));
+        vm.prank(alice);
+        feePool.claim(CLAIM);
+
+        assertFalse(feePool.getPolicy(CLAIM).claimed);
+        assertEq(feeToken.balanceOf(address(feePool)), 1_000 ether);
+        assertEq(feeToken.balanceOf(alice), 900 ether);
     }
 
     function test_onlyPoolOwnerCanCreatePolicies() public {
