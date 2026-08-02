@@ -33,14 +33,21 @@ contract OptimisticOracle is ReentrancyGuard {
     uint256 public totalWithdrawableBonds;
 
     event TruthAsserted(bytes32 indexed claimId, address indexed asserter, bool value, uint40 deadline);
+    event AssertionDisputed(bytes32 indexed claimId, address indexed disputer);
     event AssertionSettled(bytes32 indexed claimId, bool value, address indexed recipient, uint256 reward);
+    event AssertionResolved(bytes32 indexed claimId, bool value, address indexed winner, uint256 reward);
 
     error InvalidConfiguration();
     error AssertionAlreadyExists(bytes32 claimId);
     error AssertionNotFound(bytes32 claimId);
     error AssertionAlreadyResolved(bytes32 claimId);
-    error AssertionDisputed(bytes32 claimId);
+    error DisputedAssertionCannotSettle(bytes32 claimId);
+    error AssertionAlreadyDisputed(bytes32 claimId);
+    error AssertionNotDisputed(bytes32 claimId);
+    error CannotDisputeOwnAssertion();
     error ChallengeWindowOpen(uint40 deadline);
+    error ChallengeWindowClosed(uint40 deadline);
+    error NotResolver(address caller);
     error IncorrectBondTransfer(uint256 expected, uint256 received);
 
     constructor(IERC20 bondToken_, address resolver_, uint256 bondAmount_, uint40 challengeWindow_) {
@@ -75,13 +82,32 @@ contract OptimisticOracle is ReentrancyGuard {
         emit TruthAsserted(claimId, msg.sender, value, deadline);
     }
 
+    /// @notice Challenge an assertion before its deadline by posting the same
+    ///         fixed bond. A disputed claim must be decided by the resolver.
+    function disputeAssertion(bytes32 claimId) external nonReentrant {
+        Assertion storage assertion = _assertions[claimId];
+        if (assertion.asserter == address(0)) revert AssertionNotFound(claimId);
+        if (assertion.resolved) revert AssertionAlreadyResolved(claimId);
+        if (assertion.disputed) revert AssertionAlreadyDisputed(claimId);
+        if (msg.sender == assertion.asserter) revert CannotDisputeOwnAssertion();
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp > assertion.deadline) revert ChallengeWindowClosed(assertion.deadline);
+
+        _collectBond(msg.sender);
+        assertion.disputed = true;
+        assertion.disputer = msg.sender;
+        totalEscrowedBonds += bondAmount;
+
+        emit AssertionDisputed(claimId, msg.sender);
+    }
+
     /// @notice Finalize an undisputed assertion after its challenge window.
     ///         The asserter's bond becomes available through pull payment.
     function settle(bytes32 claimId) external {
         Assertion storage assertion = _assertions[claimId];
         if (assertion.asserter == address(0)) revert AssertionNotFound(claimId);
         if (assertion.resolved) revert AssertionAlreadyResolved(claimId);
-        if (assertion.disputed) revert AssertionDisputed(claimId);
+        if (assertion.disputed) revert DisputedAssertionCannotSettle(claimId);
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp <= assertion.deadline) revert ChallengeWindowOpen(assertion.deadline);
 
@@ -91,6 +117,26 @@ contract OptimisticOracle is ReentrancyGuard {
         _credit(assertion.asserter, bondAmount);
 
         emit AssertionSettled(claimId, assertion.result, assertion.asserter, bondAmount);
+    }
+
+    /// @notice Decide a disputed claim. The party whose position matches the
+    ///         resolved truth receives both bonds through the pull ledger.
+    function resolve(bytes32 claimId, bool truth) external {
+        if (msg.sender != resolver) revert NotResolver(msg.sender);
+
+        Assertion storage assertion = _assertions[claimId];
+        if (assertion.asserter == address(0)) revert AssertionNotFound(claimId);
+        if (assertion.resolved) revert AssertionAlreadyResolved(claimId);
+        if (!assertion.disputed) revert AssertionNotDisputed(claimId);
+
+        assertion.resolved = true;
+        assertion.result = truth;
+        address winner = truth == assertion.assertedValue ? assertion.asserter : assertion.disputer;
+        uint256 reward = bondAmount * 2;
+        totalEscrowedBonds -= reward;
+        _credit(winner, reward);
+
+        emit AssertionResolved(claimId, truth, winner, reward);
     }
 
     function getResult(bytes32 claimId) external view returns (bool resolved, bool value) {
