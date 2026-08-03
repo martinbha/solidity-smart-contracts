@@ -45,4 +45,21 @@ contract TokenBoundTest is Test {
         assertEq(repeated, address(account));
         assertEq(repeated.codehash, codehashBefore);
     }
+
+    function test_tokenTupleComesFromProxyFooter() public view {
+        (uint256 chainId, address tokenContract, uint256 boundTokenId) = account.token();
+
+        assertEq(chainId, block.chainid);
+        assertEq(tokenContract, address(profile));
+        assertEq(boundTokenId, tokenId);
+    }
+
+    function test_ownerTracksNftTransfer() public {
+        assertEq(account.owner(), alice);
+
+        vm.prank(alice);
+        profile.transferFrom(alice, bob, tokenId);
+
+        assertEq(account.owner(), bob);
+    }
 }
