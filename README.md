@@ -1,3 +1,30 @@
+## ERC-6551 token-bound accounts
+
+The ERC-6551 example gives each profile NFT a deterministic smart-contract
+account. `ERC6551Registry` deploys the standard ERC-1167 proxy bytecode with an
+immutable token tuple appended to it, so the address can be calculated before
+deployment. `TokenBoundAccount` reads that tuple from its proxy code and looks
+up the NFT's current owner whenever authority is checked. Transferring the NFT
+therefore transfers control of every asset in its account without moving those
+assets individually.
+
+The account accepts ETH and safe ERC-721 transfers, can call contracts and send
+assets, and increments `state` after every successful call. It rejects any call
+that would make it directly own its controlling NFT. Longer ownership cycles
+across multiple token-bound accounts remain an application-level concern, as
+described by ERC-6551.
+
+Run the complete local demonstration:
+
+```shell
+anvil
+./utils/nft/erc6551/deploy_6551.sh
+```
+
+The script funds a profile's account with ETH and ERC-20 tokens, transfers the
+profile from Alice to Bob, proves Alice immediately loses execution access, and
+has Bob send both assets from the same account.
+
 ## EIP-7702 batch delegation
 
 `BatchDelegate` gives an EOA an atomic multicall surface while preserving the
