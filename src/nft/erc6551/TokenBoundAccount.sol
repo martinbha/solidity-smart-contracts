@@ -63,7 +63,8 @@ contract TokenBoundAccount is
     }
 
     function isValidSigner(address signer, bytes calldata) external view override returns (bytes4) {
-        return signer == owner() ? IERC6551Account.isValidSigner.selector : bytes4(0);
+        address currentOwner = owner();
+        return signer != address(0) && signer == currentOwner ? IERC6551Account.isValidSigner.selector : bytes4(0);
     }
 
     function onERC721Received(address, address, uint256, bytes calldata) external pure override returns (bytes4) {

@@ -218,6 +218,15 @@ contract TokenBoundTest is Test {
         assertFalse(account.supportsInterface(0xffffffff));
     }
 
+    function test_foreignChainAccountDoesNotAuthorizeZeroAddress() public {
+        TokenBoundAccount foreignAccount = TokenBoundAccount(
+            payable(registry.createAccount(address(implementation), SALT, block.chainid + 1, address(profile), tokenId))
+        );
+
+        assertEq(foreignAccount.owner(), address(0));
+        assertEq(foreignAccount.isValidSigner(address(0), ""), bytes4(0));
+    }
+
     function test_standardExecuteOverloadSupportsCallOnly() public {
         vm.prank(alice);
         account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (keccak256("standard"))), 0);
