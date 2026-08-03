@@ -4,8 +4,14 @@ pragma solidity ^0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ERC6551Registry} from "../../../src/nft/erc6551/ERC6551Registry.sol";
-import {TokenBoundAccount} from "../../../src/nft/erc6551/TokenBoundAccount.sol";
+import {
+    IERC6551Account,
+    IERC6551Executable,
+    ISimpleTokenBoundExecutable,
+    TokenBoundAccount
+} from "../../../src/nft/erc6551/TokenBoundAccount.sol";
 import {ProfileNFT} from "../../../src/nft/erc6551/ProfileNFT.sol";
 
 contract AccountAsset is ERC20 {
@@ -202,5 +208,23 @@ contract TokenBoundTest is Test {
         assertEq(firstDeployed, firstPredicted);
         assertEq(secondDeployed, secondPredicted);
         assertNotEq(firstDeployed, secondDeployed);
+    }
+
+    function test_accountSignalsSupportedInterfaces() public view {
+        assertTrue(account.supportsInterface(type(IERC165).interfaceId));
+        assertTrue(account.supportsInterface(type(IERC6551Account).interfaceId));
+        assertTrue(account.supportsInterface(type(IERC6551Executable).interfaceId));
+        assertTrue(account.supportsInterface(type(ISimpleTokenBoundExecutable).interfaceId));
+        assertFalse(account.supportsInterface(0xffffffff));
+    }
+
+    function test_standardExecuteOverloadSupportsCallOnly() public {
+        vm.prank(alice);
+        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (bytes32("standard"))), 0);
+        assertEq(recorder.recorded(), bytes32("standard"));
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(TokenBoundAccount.UnsupportedOperation.selector, 1));
+        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (bytes32("delegate"))), 1);
     }
 }
