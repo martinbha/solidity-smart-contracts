@@ -95,4 +95,18 @@ contract TokenBoundTest is Test {
         vm.expectRevert(abi.encodeWithSelector(TokenBoundAccount.InvalidSigner.selector, intruder));
         account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (bytes32("blocked"))));
     }
+
+    function test_transferRevokesPreviousOwnerAndAuthorizesNewOwner() public {
+        vm.prank(alice);
+        profile.transferFrom(alice, bob, tokenId);
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(TokenBoundAccount.InvalidSigner.selector, alice));
+        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (bytes32("old owner"))));
+
+        vm.prank(bob);
+        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (bytes32("new owner"))));
+
+        assertEq(recorder.recorded(), bytes32("new owner"));
+    }
 }
