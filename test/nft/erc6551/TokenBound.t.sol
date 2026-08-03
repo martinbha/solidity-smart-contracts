@@ -6,10 +6,22 @@ import {ERC6551Registry} from "../../../src/nft/erc6551/ERC6551Registry.sol";
 import {TokenBoundAccount} from "../../../src/nft/erc6551/TokenBoundAccount.sol";
 import {ProfileNFT} from "../../../src/nft/erc6551/ProfileNFT.sol";
 
+contract CallRecorder {
+    address public caller;
+    bytes32 public recorded;
+
+    function record(bytes32 value) external payable returns (uint256) {
+        caller = msg.sender;
+        recorded = value;
+        return 42;
+    }
+}
+
 contract TokenBoundTest is Test {
     ERC6551Registry internal registry;
     TokenBoundAccount internal implementation;
     ProfileNFT internal profile;
+    CallRecorder internal recorder;
 
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
@@ -22,6 +34,7 @@ contract TokenBoundTest is Test {
         registry = new ERC6551Registry();
         implementation = new TokenBoundAccount();
         profile = new ProfileNFT();
+        recorder = new CallRecorder();
 
         tokenId = profile.mint(alice);
         account = TokenBoundAccount(
@@ -61,5 +74,25 @@ contract TokenBoundTest is Test {
         profile.transferFrom(alice, bob, tokenId);
 
         assertEq(account.owner(), bob);
+    }
+
+    function test_ownerCanExecuteFromAccount() public {
+        bytes32 expected = keccak256("profile action");
+
+        vm.prank(alice);
+        bytes memory result = account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (expected)));
+
+        assertEq(abi.decode(result, (uint256)), 42);
+        assertEq(recorder.caller(), address(account));
+        assertEq(recorder.recorded(), expected);
+        assertEq(account.state(), 1);
+    }
+
+    function test_nonOwnerCannotExecute() public {
+        address intruder = makeAddr("intruder");
+
+        vm.prank(intruder);
+        vm.expectRevert(abi.encodeWithSelector(TokenBoundAccount.InvalidSigner.selector, intruder));
+        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (bytes32("blocked"))));
     }
 }
