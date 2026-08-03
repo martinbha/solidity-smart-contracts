@@ -185,4 +185,22 @@ contract TokenBoundTest is Test {
 
         assertEq(profile.ownerOf(tokenId), alice);
     }
+
+    function testFuzz_distinctTokenIdsHaveDistinctPredictedAccounts(uint256 firstId, uint256 secondId) public {
+        vm.assume(firstId != secondId);
+
+        address firstPredicted =
+            registry.account(address(implementation), SALT, block.chainid, address(profile), firstId);
+        address secondPredicted =
+            registry.account(address(implementation), SALT, block.chainid, address(profile), secondId);
+
+        address firstDeployed =
+            registry.createAccount(address(implementation), SALT, block.chainid, address(profile), firstId);
+        address secondDeployed =
+            registry.createAccount(address(implementation), SALT, block.chainid, address(profile), secondId);
+
+        assertEq(firstDeployed, firstPredicted);
+        assertEq(secondDeployed, secondPredicted);
+        assertNotEq(firstDeployed, secondDeployed);
+    }
 }
