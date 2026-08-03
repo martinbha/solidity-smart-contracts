@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {ERC6551Registry} from "../../../src/nft/erc6551/ERC6551Registry.sol";
 import {TokenBoundAccount} from "../../../src/nft/erc6551/TokenBoundAccount.sol";
 import {ProfileNFT} from "../../../src/nft/erc6551/ProfileNFT.sol";
@@ -12,6 +13,17 @@ contract AccountAsset is ERC20 {
 
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
+    }
+}
+
+contract EquipmentNFT is ERC721 {
+    uint256 public nextTokenId = 1;
+
+    constructor() ERC721("Equipment", "GEAR") {}
+
+    function mint(address to) external returns (uint256 tokenId) {
+        tokenId = nextTokenId++;
+        _safeMint(to, tokenId);
     }
 }
 
@@ -142,5 +154,20 @@ contract TokenBoundTest is Test {
 
         assertEq(asset.balanceOf(address(account)), 60 ether);
         assertEq(asset.balanceOf(bob), 40 ether);
+    }
+
+    function test_accountSafelyReceivesAndSendsErc721() public {
+        EquipmentNFT equipment = new EquipmentNFT();
+        uint256 equipmentId = equipment.mint(address(account));
+        assertEq(equipment.ownerOf(equipmentId), address(account));
+
+        vm.prank(alice);
+        account.execute(
+            address(equipment),
+            0,
+            abi.encodeWithSignature("safeTransferFrom(address,address,uint256)", address(account), bob, equipmentId)
+        );
+
+        assertEq(equipment.ownerOf(equipmentId), bob);
     }
 }
