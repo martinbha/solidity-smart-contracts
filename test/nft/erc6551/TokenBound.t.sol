@@ -2,9 +2,18 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC6551Registry} from "../../../src/nft/erc6551/ERC6551Registry.sol";
 import {TokenBoundAccount} from "../../../src/nft/erc6551/TokenBoundAccount.sol";
 import {ProfileNFT} from "../../../src/nft/erc6551/ProfileNFT.sol";
+
+contract AccountAsset is ERC20 {
+    constructor() ERC20("Account Asset", "ASSET") {}
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+}
 
 contract CallRecorder {
     address public caller;
@@ -122,5 +131,16 @@ contract TokenBoundTest is Test {
 
         assertEq(address(account).balance, 1.25 ether);
         assertEq(bob.balance, bobBalanceBefore + 0.75 ether);
+    }
+
+    function test_accountHoldsAndSendsErc20() public {
+        AccountAsset asset = new AccountAsset();
+        asset.mint(address(account), 100 ether);
+
+        vm.prank(alice);
+        account.execute(address(asset), 0, abi.encodeCall(asset.transfer, (bob, 40 ether)));
+
+        assertEq(asset.balanceOf(address(account)), 60 ether);
+        assertEq(asset.balanceOf(bob), 40 ether);
     }
 }
