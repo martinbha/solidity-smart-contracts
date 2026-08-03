@@ -12,14 +12,28 @@ interface IERC6551Account {
     function isValidSigner(address signer, bytes calldata context) external view returns (bytes4 magicValue);
 }
 
+interface IERC6551Executable {
+    function execute(address to, uint256 value, bytes calldata data, uint8 operation)
+        external
+        payable
+        returns (bytes memory result);
+}
+
+interface ISimpleTokenBoundExecutable {
+    function execute(address to, uint256 value, bytes calldata data) external payable returns (bytes memory result);
+}
+
 /// @title TokenBoundAccount
 /// @notice An account whose authority follows ownership of one ERC-721 token.
 /// @dev Calls reach this implementation through an ERC-6551 proxy. The proxy
 ///      stores its immutable token tuple after the ERC-1167 runtime bytecode.
-contract TokenBoundAccount is IERC6551Account, IERC165 {
+contract TokenBoundAccount is IERC6551Account, IERC6551Executable, ISimpleTokenBoundExecutable, IERC165 {
     uint256 private immutable _deploymentChainId = block.chainid;
 
     uint256 public override state;
+
+    error InvalidSigner(address caller);
+    error UnsupportedOperation(uint8 operation);
 
     receive() external payable override {}
 
@@ -44,7 +58,43 @@ contract TokenBoundAccount is IERC6551Account, IERC165 {
         return signer == owner() ? IERC6551Account.isValidSigner.selector : bytes4(0);
     }
 
+    /// @notice Executes a call using the compact surface requested by the
+    ///         example, while retaining the standard operation-aware overload.
+    function execute(address to, uint256 value, bytes calldata data)
+        external
+        payable
+        override
+        returns (bytes memory result)
+    {
+        return _execute(to, value, data);
+    }
+
+    function execute(address to, uint256 value, bytes calldata data, uint8 operation)
+        external
+        payable
+        override
+        returns (bytes memory result)
+    {
+        if (operation != 0) revert UnsupportedOperation(operation);
+        return _execute(to, value, data);
+    }
+
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IERC165).interfaceId || interfaceId == type(IERC6551Account).interfaceId;
+        return interfaceId == type(IERC165).interfaceId || interfaceId == type(IERC6551Account).interfaceId
+            || interfaceId == type(IERC6551Executable).interfaceId
+            || interfaceId == type(ISimpleTokenBoundExecutable).interfaceId;
+    }
+
+    function _execute(address to, uint256 value, bytes calldata data) private returns (bytes memory result) {
+        if (msg.sender != owner()) revert InvalidSigner(msg.sender);
+
+        state++;
+        bool success;
+        (success, result) = to.call{value: value}(data);
+        if (!success) {
+            assembly ("memory-safe") {
+                revert(add(result, 0x20), mload(result))
+            }
+        }
     }
 }
