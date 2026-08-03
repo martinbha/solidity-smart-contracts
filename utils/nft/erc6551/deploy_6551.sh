@@ -23,6 +23,11 @@ export PRIVATE_KEY="${PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbe
 ALICE_KEY="${ALICE_KEY:-0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d}"
 BOB_KEY="${BOB_KEY:-0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a}"
 
+if ! command -v bc > /dev/null; then
+    echo "error: bc is required for 256-bit balance arithmetic" >&2
+    exit 1
+fi
+
 if ! CHAIN_ID=$(cast chain-id --rpc-url "$RPC_URL" 2>/dev/null); then
     echo "error: no node reachable at $RPC_URL (start one with 'anvil')" >&2
     exit 1
@@ -105,6 +110,7 @@ RECIPIENT_ETH_BEFORE=$(cast balance "$RECIPIENT" --rpc-url "$RPC_URL")
 cast send "$ACCOUNT" "execute(address,uint256,bytes)(bytes)" "$RECIPIENT" 0.5ether 0x \
     --rpc-url "$RPC_URL" --private-key "$BOB_KEY" > /dev/null
 RECIPIENT_ETH_AFTER=$(cast balance "$RECIPIENT" --rpc-url "$RPC_URL")
+RECIPIENT_ETH_DELTA=$(bc <<< "$RECIPIENT_ETH_AFTER - $RECIPIENT_ETH_BEFORE")
 
 CURRENT_OWNER=$(cast call "$ACCOUNT" "owner()(address)" --rpc-url "$RPC_URL")
 ACCOUNT_ASSET_BALANCE=$(cast call "$ASSET" "balanceOf(address)(uint256)" "$ACCOUNT" \
@@ -137,7 +143,7 @@ check "previous owner lost execution access" "true" "$OLD_OWNER_REVERTED"
 check "account retained 75 demo tokens" "$(cast to-wei 75)" "$ACCOUNT_ASSET_BALANCE"
 check "new owner sent 25 demo tokens" "$ASSET_SEND" "$RECIPIENT_ASSET_BALANCE"
 check "account retained 1.5 ETH" "$(cast to-wei 1.5)" "$ACCOUNT_ETH_BALANCE"
-check "new owner sent 0.5 ETH" "$(cast to-wei 0.5)" "$((RECIPIENT_ETH_AFTER - RECIPIENT_ETH_BEFORE))"
+check "new owner sent 0.5 ETH" "$(cast to-wei 0.5)" "$RECIPIENT_ETH_DELTA"
 check "two successful account calls updated state" "2" "$ACCOUNT_STATE"
 
 echo ""
