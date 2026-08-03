@@ -109,4 +109,18 @@ contract TokenBoundTest is Test {
 
         assertEq(recorder.recorded(), bytes32("new owner"));
     }
+
+    function test_accountReceivesAndSendsEther() public {
+        vm.deal(alice, 2 ether);
+        vm.prank(alice);
+        (bool funded,) = address(account).call{value: 2 ether}("");
+        assertTrue(funded);
+
+        uint256 bobBalanceBefore = bob.balance;
+        vm.prank(alice);
+        account.execute(bob, 0.75 ether, "");
+
+        assertEq(address(account).balance, 1.25 ether);
+        assertEq(bob.balance, bobBalanceBefore + 0.75 ether);
+    }
 }
