@@ -120,7 +120,7 @@ contract TokenBoundTest is Test {
 
         vm.prank(intruder);
         vm.expectRevert(abi.encodeWithSelector(TokenBoundAccount.InvalidSigner.selector, intruder));
-        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (bytes32("blocked"))));
+        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (keccak256("blocked"))));
     }
 
     function test_transferRevokesPreviousOwnerAndAuthorizesNewOwner() public {
@@ -129,12 +129,12 @@ contract TokenBoundTest is Test {
 
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(TokenBoundAccount.InvalidSigner.selector, alice));
-        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (bytes32("old owner"))));
+        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (keccak256("old owner"))));
 
         vm.prank(bob);
-        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (bytes32("new owner"))));
+        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (keccak256("new owner"))));
 
-        assertEq(recorder.recorded(), bytes32("new owner"));
+        assertEq(recorder.recorded(), keccak256("new owner"));
     }
 
     function test_accountReceivesAndSendsEther() public {
@@ -220,11 +220,11 @@ contract TokenBoundTest is Test {
 
     function test_standardExecuteOverloadSupportsCallOnly() public {
         vm.prank(alice);
-        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (bytes32("standard"))), 0);
-        assertEq(recorder.recorded(), bytes32("standard"));
+        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (keccak256("standard"))), 0);
+        assertEq(recorder.recorded(), keccak256("standard"));
 
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(TokenBoundAccount.UnsupportedOperation.selector, 1));
-        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (bytes32("delegate"))), 1);
+        account.execute(address(recorder), 0, abi.encodeCall(recorder.record, (keccak256("delegate"))), 1);
     }
 }
