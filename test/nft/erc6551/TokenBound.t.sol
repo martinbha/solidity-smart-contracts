@@ -170,4 +170,19 @@ contract TokenBoundTest is Test {
 
         assertEq(equipment.ownerOf(equipmentId), bob);
     }
+
+    function test_accountCannotAcquireItsControllingNftThroughExecute() public {
+        vm.prank(alice);
+        profile.approve(address(account), tokenId);
+
+        vm.prank(alice);
+        vm.expectRevert(TokenBoundAccount.OwnershipCycle.selector);
+        account.execute(
+            address(profile),
+            0,
+            abi.encodeWithSignature("transferFrom(address,address,uint256)", alice, address(account), tokenId)
+        );
+
+        assertEq(profile.ownerOf(tokenId), alice);
+    }
 }
