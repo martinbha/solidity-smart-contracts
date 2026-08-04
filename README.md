@@ -112,6 +112,44 @@ The script verifies early payout rejection, challenge-window settlement, the
 insurance payout, resolver-only dispute handling, winner-takes-both bond
 accounting, and the oracle's final zero balance.
 
+## Constant-product AMM
+
+The AMM example is a mini Uniswap V2. `Pair` holds two ERC-20 reserves and
+enforces `x · y = k`: there is no order book and no quoted price, so the
+marginal rate is just `reserveOut / reserveIn` and price impact falls out of
+the curve rather than being programmed in. The pool is its own LP token, so a
+claim on the reserves is transferable and composable.
+
+Swaps take 30 basis points of the input and leave it in the pool. Nothing is
+distributed; `k` simply grows, and every share becomes worth slightly more
+reserves. The first deposit mints `sqrt(a·b)` shares and permanently burns
+`MINIMUM_LIQUIDITY` of them, which keeps total supply off zero and closes the
+share-inflation attack that ERC-4626 vaults answer with virtual offsets.
+
+`PairFactory` deploys one canonical pool per unordered token pair through
+CREATE2. `Pair` therefore takes no constructor arguments — the factory calls
+`initialize` after deployment — which keeps the init-code hash constant and
+makes `computePairAddress` usable before the pool exists.
+
+Every reserve change folds `price · secondsElapsed` into a cumulative
+accumulator. A consumer anchors the window with `updateOracle` and later reads
+`consult`. Because each price is weighted by how long it survived, a swap that
+slams the pool in the final second of the window contributes nothing to the
+average — the demo moves spot by more than half while the TWAP stays within
+0.1% of where it started.
+
+Run the local demonstration:
+
+```shell
+anvil
+./utils/defi/amm/deploy_amm.sh
+```
+
+The script deploys two tokens, a factory, and a pair at a predicted CREATE2
+address, seeds liquidity, swaps both ways, proves a slippage guard reverts,
+advances an hour, manipulates spot with a whale swap, compares the TWAP against
+it, and withdraws all liquidity.
+
 ## Foundry
 
 **Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
