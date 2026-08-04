@@ -82,11 +82,16 @@ contract Pair is ERC20, ReentrancyGuard {
     ///         UQ112x112. Allowed to overflow: only differences are read.
     uint256 public price0CumulativeLast;
 
-    /// @notice The anchor `consult` measures against, set by `updateOracle`.
-    uint256 public price0CumulativeAnchor;
+    /// @dev One reader's snapshot of the accumulator.
+    struct Observation {
+        uint256 price0Cumulative;
+        uint32 timestamp;
+        bool set;
+    }
 
-    /// @notice Timestamp of the anchor observation.
-    uint32 public anchorTimestamp;
+    /// @notice Each consumer's own anchor. Windows are per-caller so nobody
+    ///         can shorten anybody else's.
+    mapping(address consumer => Observation observation) public anchors;
 
     error AlreadyInitialized();
     error NotFactory();
@@ -101,6 +106,7 @@ contract Pair is ERC20, ReentrancyGuard {
     error InvariantViolated();
     error ReserveOverflow();
     error NoElapsedTime();
+    error NoAnchor(address consumer);
 
     event Mint(address indexed sender, address indexed to, uint256 amount0, uint256 amount1, uint256 shares);
     event Burn(address indexed sender, address indexed to, uint256 amount0, uint256 amount1, uint256 shares);
@@ -108,7 +114,7 @@ contract Pair is ERC20, ReentrancyGuard {
         address indexed sender, address indexed tokenIn, uint256 amountIn, uint256 amountOut, address indexed to
     );
     event Sync(uint112 reserve0, uint112 reserve1);
-    event OracleAnchored(uint256 price0Cumulative, uint32 timestamp);
+    event OracleAnchored(address indexed consumer, uint256 price0Cumulative, uint32 timestamp);
 
     constructor() ERC20("Constant Product LP", "CP-LP") {
         factory = msg.sender;
@@ -156,7 +162,11 @@ contract Pair is ERC20, ReentrancyGuard {
 
         uint256 supply = totalSupply();
         if (supply == 0) {
-            shares = Math.sqrt(received0 * received1) - MINIMUM_LIQUIDITY;
+            // Subtracting the lock first would panic on a dust-sized first
+            // deposit; check it so the caller gets a named error instead.
+            uint256 seeded = Math.sqrt(received0 * received1);
+            if (seeded <= MINIMUM_LIQUIDITY) revert InsufficientLiquidityMinted();
+            shares = seeded - MINIMUM_LIQUIDITY;
             _mint(BURN_ADDRESS, MINIMUM_LIQUIDITY);
         } else {
             // Whichever side is scarcer relative to the reserves decides the
@@ -167,13 +177,6 @@ contract Pair is ERC20, ReentrancyGuard {
 
         _mint(msg.sender, shares);
         _update();
-
-        // Start the oracle window at the pool's birth rather than at the
-        // Unix epoch, so an unanchored `consult` is never nonsense.
-        if (supply == 0) {
-            price0CumulativeAnchor = price0CumulativeLast;
-            anchorTimestamp = _blockTimestampLast;
-        }
 
         emit Mint(msg.sender, msg.sender, received0, received1, shares);
     }
@@ -290,25 +293,32 @@ contract Pair is ERC20, ReentrancyGuard {
 
     // --------------------------------------------------------------- oracle
 
-    /// @notice Anchors the TWAP window at the current cumulative price.
-    /// @dev Permissionless: a consumer anchors, waits its chosen window, then
-    ///      calls `consult`. Re-anchoring restarts the window.
+    /// @notice Anchors the caller's own TWAP window at the current cumulative
+    ///         price.
+    /// @dev Anchors are per-caller on purpose. A single shared anchor would be
+    ///      worthless: anyone could re-anchor in the block before a consumer
+    ///      read the oracle, collapsing its window to a few seconds and
+    ///      handing back something barely distinguishable from spot — exactly
+    ///      the manipulation the TWAP exists to prevent. Owning your window is
+    ///      what makes the average trustworthy, so each consumer keeps its own.
     function updateOracle() external {
         _accumulate();
-        price0CumulativeAnchor = price0CumulativeLast;
-        anchorTimestamp = _blockTimestampLast;
-        emit OracleAnchored(price0CumulativeLast, _blockTimestampLast);
+        anchors[msg.sender] = Observation(price0CumulativeLast, _blockTimestampLast, true);
+        emit OracleAnchored(msg.sender, price0CumulativeLast, _blockTimestampLast);
     }
 
     /// @notice Time-weighted average price of `token0` denominated in
-    ///         `token1`, over the window since the last `updateOracle`, scaled
-    ///         by 1e18.
+    ///         `token1`, over the caller's window since its own
+    ///         `updateOracle`, scaled by 1e18.
     /// @dev Includes the time elapsed since the last reserve change, so an
     ///      idle pool still reports a meaningful average. Reverts if no time
     ///      has passed — an average over zero seconds is not a number.
     function consult() external view returns (uint256 twapPrice) {
+        Observation memory anchor = anchors[msg.sender];
+        if (!anchor.set) revert NoAnchor(msg.sender);
+
         uint32 nowTimestamp = uint32(block.timestamp);
-        uint32 elapsed = nowTimestamp - anchorTimestamp;
+        uint32 elapsed = nowTimestamp - anchor.timestamp;
         if (elapsed == 0) revert NoElapsedTime();
 
         uint256 cumulative = price0CumulativeLast;
@@ -326,7 +336,7 @@ contract Pair is ERC20, ReentrancyGuard {
         unchecked {
             // Overflow of the accumulator is by design; the difference between
             // two observations is still correct modulo 2^256.
-            averageQ112 = (cumulative - price0CumulativeAnchor) / elapsed;
+            averageQ112 = (cumulative - anchor.price0Cumulative) / elapsed;
         }
         twapPrice = Math.mulDiv(averageQ112, 1e18, Q112);
     }

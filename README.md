@@ -132,8 +132,11 @@ CREATE2. `Pair` therefore takes no constructor arguments — the factory calls
 makes `computePairAddress` usable before the pool exists.
 
 Every reserve change folds `price · secondsElapsed` into a cumulative
-accumulator. A consumer anchors the window with `updateOracle` and later reads
-`consult`. Because each price is weighted by how long it survived, a swap that
+accumulator. A consumer anchors its own window with `updateOracle` and later
+reads `consult`. Anchors are per-caller deliberately: a single shared anchor
+could be reset by anyone in the block before a consumer read it, collapsing the
+window to a few seconds and handing back something barely distinguishable from
+spot. Because each price is weighted by how long it survived, a swap that
 slams the pool in the final second of the window contributes nothing to the
 average — the demo moves spot by more than half while the TWAP stays within
 0.1% of where it started.

@@ -274,6 +274,57 @@ contract PairTest is Test {
         pair.consult();
     }
 
+    function test_ConsultRevertsWithoutTheCallersOwnAnchor() public {
+        pair.updateOracle();
+        vm.warp(block.timestamp + 1 hours);
+
+        // Bob never anchored, so this pool has nothing to average for him.
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(Pair.NoAnchor.selector, bob));
+        pair.consult();
+    }
+
+    function test_AnchorsArePerCallerAndCannotBeResetByOthers() public {
+        pair.updateOracle();
+        uint256 spotStart = pair.spotPrice();
+        address token0 = pair.token0();
+
+        // An hour at the seeded price, then Bob opens his own window and
+        // immediately moves the market.
+        vm.warp(block.timestamp + 1 hours);
+        vm.prank(bob);
+        pair.updateOracle();
+        vm.prank(bob);
+        pair.swap(token0, 20_000 ether, 0);
+        vm.warp(block.timestamp + 1 hours);
+
+        uint256 ourTwap = pair.consult();
+        vm.prank(bob);
+        uint256 bobTwap = pair.consult();
+
+        // Bob's fresh anchor did not touch ours: we still average two hours,
+        // half of them at the old price, so we sit above his one-hour view.
+        assertApproxEqRel(bobTwap, pair.spotPrice(), 1e15, "bob averages only his own hour");
+        assertGt(ourTwap, bobTwap, "our older window still carries the pre-swap hour");
+        assertLt(ourTwap, spotStart, "and it has absorbed the move too");
+    }
+
+    function test_FirstDepositBelowTheLockRevertsCleanly() public {
+        PairFactory freshFactory = new PairFactory();
+        AmmToken tokenC = new AmmToken("Token C", "TKC");
+        Pair fresh = Pair(freshFactory.createPair(address(tokenA), address(tokenC)));
+
+        tokenA.mint(address(this), 1_000);
+        tokenC.mint(address(this), 1_000);
+        tokenA.approve(address(fresh), type(uint256).max);
+        tokenC.approve(address(fresh), type(uint256).max);
+
+        // sqrt(100 * 100) == 100, below MINIMUM_LIQUIDITY: a named error
+        // rather than an arithmetic panic.
+        vm.expectRevert(Pair.InsufficientLiquidityMinted.selector);
+        fresh.addLiquidity(100, 100);
+    }
+
     // ---------------------------------------------------------------- factory
 
     function test_FactoryDeploysToTheComputedAddress() public {

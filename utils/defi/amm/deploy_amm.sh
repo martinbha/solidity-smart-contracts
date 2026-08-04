@@ -33,6 +33,9 @@ fi
 
 send() { cast send "$@" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null; }
 call() { cast call "$@" --rpc-url "$RPC_URL" | awk '{print $1}'; }
+# consult() reads the caller's OWN anchor, so it must be called as the deployer
+# that ran updateOracle -- an unanchored reader gets NoAnchor, by design.
+call_as_deployer() { cast call "$@" --from "$DEPLOYER" --rpc-url "$RPC_URL" | awk '{print $1}'; }
 
 echo "==> Deploying constant-product AMM to chain $CHAIN_ID"
 OUTPUT=$(forge script script/defi/amm/DeployAmm.s.sol:DeployAmm \
@@ -117,11 +120,11 @@ send "$PAIR" "updateOracle()"
 cast rpc evm_increaseTime 3600 --rpc-url "$RPC_URL" > /dev/null
 cast rpc evm_mine --rpc-url "$RPC_URL" > /dev/null
 
-TWAP_BEFORE=$(call "$PAIR" "consult()(uint256)")
+TWAP_BEFORE=$(call_as_deployer "$PAIR" "consult()(uint256)")
 WHALE_IN=50000000000000000000000 # 50k
 send "$TOKEN0" "approve(address,uint256)" "$PAIR" "$WHALE_IN"
 send "$PAIR" "swap(address,uint256,uint256)" "$TOKEN0" "$WHALE_IN" 0
-TWAP_AFTER=$(call "$PAIR" "consult()(uint256)")
+TWAP_AFTER=$(call_as_deployer "$PAIR" "consult()(uint256)")
 SPOT_AFTER_WHALE=$(call "$PAIR" "spotPrice()(uint256)")
 
 echo "    spot: $(cast from-wei "$SPOT_AFTER_WHALE"), twap: $(cast from-wei "$TWAP_AFTER")"
